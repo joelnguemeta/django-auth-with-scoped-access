@@ -48,10 +48,11 @@ uv run pytest
 ## Status
 
 - [x] Spec v0.1.0-draft + conformance cases (coverage, lifecycle, tenancy, flat RBAC, write guard, reauth, access summary)
-- [x] Core engine, models, permission backend
+- [x] Core engine, models, permission backend, package migrations
 - [x] DRF glue — `ScopedModelPermission`, `ScopeObjectPermission`, `ScopeQuerySetMixin`, `GET /me/access/`
 - [x] Step-up re-authentication — `ReAuthService` + pluggable verifiers, `RequireReAuth`, `ReAuthView`
-- [ ] Package migrations, swappable models, per-request caching
-- [ ] Migration guides (from per-level FK schemas, from role-checking code)
+- [x] Swappable models (`SCOPED_ACCESS_ROLE_MODEL`, `SCOPED_ACCESS_ASSIGNMENT_MODEL`)
+- [x] Per-request caching (`scoped_access.cache.ScopedAccessCacheMiddleware`) with in-request invalidation by the lifecycle APIs
+- [ ] PyPI release
 
 License: TBD.

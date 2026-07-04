@@ -34,6 +34,45 @@ DEFAULTS = {
     "REAUTH": {"ENABLED": False, "TTL": 300},
 }
 
+# Swappable models, à la AUTH_USER_MODEL. Top-level settings (not keys of the
+# SCOPED_ACCESS dict) because Django's swappable machinery resolves them by
+# settings name. Must be set before the first migrate.
+ROLE_MODEL_SETTING = "SCOPED_ACCESS_ROLE_MODEL"
+ASSIGNMENT_MODEL_SETTING = "SCOPED_ACCESS_ASSIGNMENT_MODEL"
+
+
+def ensure_swappable_defaults() -> None:
+    """Django resolves Meta.swappable with getattr(settings, name): the
+    setting must exist even when the host never swaps. Called at model
+    import time.
+    """
+    for name, default in (
+        (ROLE_MODEL_SETTING, "scoped_access.Role"),
+        (ASSIGNMENT_MODEL_SETTING, "scoped_access.ScopeAssignment"),
+    ):
+        if not hasattr(settings, name):
+            setattr(settings, name, default)
+
+
+def role_model_label() -> str:
+    return getattr(settings, ROLE_MODEL_SETTING, "scoped_access.Role")
+
+
+def assignment_model_label() -> str:
+    return getattr(settings, ASSIGNMENT_MODEL_SETTING, "scoped_access.ScopeAssignment")
+
+
+def get_role_model():
+    from django.apps import apps
+
+    return apps.get_model(role_model_label())
+
+
+def get_assignment_model():
+    from django.apps import apps
+
+    return apps.get_model(assignment_model_label())
+
 
 @dataclass(frozen=True)
 class ScopedAccessConfig:

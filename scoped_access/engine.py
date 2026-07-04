@@ -9,10 +9,9 @@ from __future__ import annotations
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
-from django.utils import timezone
 
-from .conf import get_config
-from .models import ScopeAssignment
+from . import cache
+from .conf import get_assignment_model, get_config
 from .registry import resources
 
 # Anchor resolution outcomes (SPEC §4.1)
@@ -56,13 +55,13 @@ def iter_ancestors(node):
         node = getattr(node, accessor) if accessor else None
 
 
-def _same_node(assignment: ScopeAssignment, node) -> bool:
+def _same_node(assignment, node) -> bool:
     return str(node.pk) == str(assignment.scope_id) and (
         ContentType.objects.get_for_model(type(node)).pk == assignment.scope_ct_id
     )
 
 
-def covers(assignment: ScopeAssignment, obj) -> bool:
+def covers(assignment, obj) -> bool:
     """SPEC §4.2 — inclusive downward, never upward."""
     if assignment.is_root_scope:
         return True
@@ -79,13 +78,30 @@ def covers(assignment: ScopeAssignment, obj) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def effective_assignments(user, at=None):
+def _fetch_effective(user, at=None):
     return (
-        ScopeAssignment.objects.filter(user=user)
+        get_assignment_model()
+        .objects.filter(user=user)
         .effective(at)
         .select_related("role")
         .prefetch_related("role__permissions__content_type")
     )
+
+
+def effective_assignments(user, at=None):
+    """Effective assignments, memoized per request when the store is active
+    (SPEC §11). Explicit-clock calls bypass the cache — only "now" answers
+    may be reused within a request.
+    """
+    if at is not None:
+        return _fetch_effective(user, at)
+    store = cache.get_store()
+    if store is None:
+        return _fetch_effective(user)
+    key = ("assignments", str(user.pk))
+    if key not in store:
+        store[key] = list(_fetch_effective(user))
+    return store[key]
 
 
 def _role_perms(role) -> set[str]:
@@ -133,7 +149,7 @@ def user_covers(user, obj, at=None) -> bool:
     kind, node = resolve_anchor(obj)
     if kind == GLOBAL:
         return True
-    for assignment in ScopeAssignment.objects.filter(user=user).effective(at):
+    for assignment in effective_assignments(user, at):
         if assignment.is_root_scope:
             return True
         if kind == NODE and node is not None and any(
@@ -186,7 +202,7 @@ def accessible_nodes(user, level_name: str, at=None):
 
     target_rank = cfg.hierarchy.rank(level_name)
     q = Q(pk__in=[])
-    for a in ScopeAssignment.objects.filter(user=user).effective(at):
+    for a in effective_assignments(user, at):
         if a.is_root_scope:
             return qs
         a_rank = cfg.hierarchy.rank(a.level)
@@ -220,7 +236,7 @@ def scope_filter_q(user, model, at=None) -> Q:
     cfg = get_config()
     target_levels = _anchor_target_levels(model)
     q = Q(pk__in=[])
-    for a in ScopeAssignment.objects.filter(user=user).effective(at):
+    for a in effective_assignments(user, at):
         if a.is_root_scope:
             return Q()
         a_rank = cfg.hierarchy.rank(a.level)

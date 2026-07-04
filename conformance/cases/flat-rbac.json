@@ -1,0 +1,41 @@
+{
+  "description": "Degenerate case (SPEC §1 goal 1): empty hierarchy = plain RBAC. All assignments are global, all resources are global, no permission implication exists in the flat catalog.",
+  "config": {
+    "hierarchy": [],
+    "root_level": null,
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [],
+  "roles": [
+    {"id": "editor", "permissions": ["articles.change_article"], "owner": null},
+    {"id": "viewer", "permissions": ["articles.view_article"], "owner": null}
+  ],
+  "principals": [
+    {
+      "id": "ed", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "editor", "level": null, "node": null, "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "vi", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "viewer", "level": null, "node": null, "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    }
+  ],
+  "resources": [
+    {"id": "article-1", "anchor": null}
+  ],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [
+    {"type": "perm", "principal": "ed", "permission": "articles.change_article", "resource": "article-1", "expect": true},
+    {"type": "perm", "principal": "vi", "permission": "articles.change_article", "resource": "article-1", "expect": false},
+    {"type": "perm", "principal": "vi", "permission": "articles.view_article", "resource": "article-1", "expect": true},
+    {"type": "perm", "principal": "ed", "permission": "articles.view_article", "resource": "article-1", "expect": false,
+     "note": "no implication between permissions: change does not imply view"},
+    {"type": "resource_visible", "principal": "vi", "resource": "article-1", "expect": true,
+     "note": "with no hierarchy every resource is global"}
+  ]
+}

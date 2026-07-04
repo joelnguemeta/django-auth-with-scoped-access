@@ -1,0 +1,89 @@
+{
+  "description": "Core coverage rules (SPEC §4-§5): inclusive downward subtree coverage, no upward coverage, root scope covers everything, global resources skip the scope check only, collection filtering.",
+  "config": {
+    "hierarchy": ["NATIONAL", "REGIONAL", "DISTRICT", "FACILITY", "DEPARTMENT"],
+    "root_level": "NATIONAL",
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [
+    {"id": "north", "level": "REGIONAL"},
+    {"id": "south", "level": "REGIONAL"},
+    {"id": "dist-a", "level": "DISTRICT", "parent": "north"},
+    {"id": "dist-b", "level": "DISTRICT", "parent": "south"},
+    {"id": "hosp-1", "level": "FACILITY", "parent": "dist-a"},
+    {"id": "hosp-2", "level": "FACILITY", "parent": "dist-a"},
+    {"id": "hosp-3", "level": "FACILITY", "parent": "dist-b"},
+    {"id": "dept-mat", "level": "DEPARTMENT", "parent": "hosp-1"}
+  ],
+  "roles": [
+    {"id": "doctor", "permissions": ["patients.view_patient"], "owner": null},
+    {"id": "inspector", "permissions": ["facilities.view_facility"], "owner": null},
+    {"id": "fac-viewer", "permissions": ["facilities.view_facility"], "owner": null}
+  ],
+  "principals": [
+    {
+      "id": "fred", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "doctor", "level": "FACILITY", "node": "hosp-1", "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "dora", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "doctor", "level": "DEPARTMENT", "node": "dept-mat", "status": "ACTIVE", "valid_from": null, "valid_until": null},
+        {"role": "fac-viewer", "level": "DEPARTMENT", "node": "dept-mat", "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "rita", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "inspector", "level": "REGIONAL", "node": "north", "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "nate", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "doctor", "level": "NATIONAL", "node": null, "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    }
+  ],
+  "resources": [
+    {"id": "patient-1", "anchor": "dept-mat"},
+    {"id": "patient-2", "anchor": "hosp-2"},
+    {"id": "patient-3", "anchor": "hosp-3"},
+    {"id": "hosp1-record", "anchor": "hosp-1"},
+    {"id": "hosp3-record", "anchor": "hosp-3"},
+    {"id": "icd-catalog", "anchor": null}
+  ],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [
+    {"type": "perm", "principal": "fred", "permission": "patients.view_patient", "resource": "patient-1", "expect": true,
+     "note": "facility scope covers its departments (inclusive downward)"},
+    {"type": "perm", "principal": "fred", "permission": "patients.view_patient", "resource": "patient-2", "expect": false,
+     "note": "sibling facility is not covered"},
+    {"type": "perm", "principal": "dora", "permission": "patients.view_patient", "resource": "patient-1", "expect": true,
+     "note": "exact scope node (self) is covered"},
+    {"type": "perm", "principal": "dora", "permission": "facilities.view_facility", "resource": "hosp1-record", "expect": false,
+     "note": "no upward coverage: department scope does not cover its parent facility"},
+    {"type": "perm", "principal": "rita", "permission": "facilities.view_facility", "resource": "hosp1-record", "expect": true,
+     "note": "regional scope covers facilities two levels down"},
+    {"type": "perm", "principal": "rita", "permission": "facilities.view_facility", "resource": "hosp3-record", "expect": false,
+     "note": "other region is not covered"},
+    {"type": "perm", "principal": "nate", "permission": "patients.view_patient", "resource": "patient-3", "expect": true,
+     "note": "root-level assignment covers everything"},
+    {"type": "perm", "principal": "fred", "permission": "patients.view_patient", "resource": "icd-catalog", "expect": true,
+     "note": "global resource skips the scope check"},
+    {"type": "perm", "principal": "fred", "permission": "facilities.view_facility", "resource": "icd-catalog", "expect": false,
+     "note": "global resource does NOT skip the RBAC check"},
+    {"type": "perm", "principal": "fred", "permission": "patients.view_patient", "expect": true,
+     "note": "no-resource check: permission held through any effective assignment"},
+    {"type": "accessible_nodes", "principal": "rita", "level": "FACILITY", "expect": ["hosp-1", "hosp-2"],
+     "note": "descendants-or-self at the requested level"},
+    {"type": "accessible_nodes", "principal": "fred", "level": "FACILITY", "expect": ["hosp-1"]},
+    {"type": "accessible_nodes", "principal": "dora", "level": "FACILITY", "expect": [],
+     "note": "an assignment deeper than the requested level contributes nothing (no upward coverage)"},
+    {"type": "resource_visible", "principal": "dora", "resource": "patient-1", "expect": true},
+    {"type": "resource_visible", "principal": "fred", "resource": "patient-2", "expect": false}
+  ]
+}

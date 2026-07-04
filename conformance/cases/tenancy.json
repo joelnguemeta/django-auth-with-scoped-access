@@ -1,0 +1,65 @@
+{
+  "description": "Role ownership / multi-tenancy (SPEC §6): custom role visibility (R1), assignability restricted to the owner's subtree (R2), anti-escalation on grantable permissions (R5).",
+  "config": {
+    "hierarchy": ["NATIONAL", "REGIONAL", "FACILITY", "DEPARTMENT"],
+    "root_level": "NATIONAL",
+    "role_owner_levels": ["FACILITY"],
+    "grantable_permissions": "self"
+  },
+  "nodes": [
+    {"id": "north", "level": "REGIONAL"},
+    {"id": "hosp-1", "level": "FACILITY", "parent": "north"},
+    {"id": "hosp-2", "level": "FACILITY", "parent": "north"},
+    {"id": "dept-urg", "level": "DEPARTMENT", "parent": "hosp-1"}
+  ],
+  "roles": [
+    {"id": "fac-admin", "permissions": ["roles.manage_roles", "patients.view_patient"], "owner": null},
+    {"id": "inspector", "permissions": ["facilities.view_facility"], "owner": null},
+    {"id": "custom-triage", "permissions": ["patients.view_patient"], "owner": "hosp-1"}
+  ],
+  "principals": [
+    {
+      "id": "admin1", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "fac-admin", "level": "FACILITY", "node": "hosp-1", "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "admin2", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "fac-admin", "level": "FACILITY", "node": "hosp-2", "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "rita", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "inspector", "level": "REGIONAL", "node": "north", "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    }
+  ],
+  "resources": [],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [
+    {"type": "role_visible", "principal": "admin1", "role": "custom-triage", "expect": true,
+     "note": "owner node is inside the principal's scope"},
+    {"type": "role_visible", "principal": "admin2", "role": "custom-triage", "expect": false,
+     "note": "custom roles are invisible outside their owner's subtree"},
+    {"type": "role_visible", "principal": "rita", "role": "custom-triage", "expect": true,
+     "note": "a scope covering the owner (region above) sees the role"},
+    {"type": "role_visible", "principal": "admin2", "role": "fac-admin", "expect": true,
+     "note": "system roles (no owner) are visible everywhere"},
+    {"type": "role_assignable", "role": "custom-triage", "level": "FACILITY", "node": "hosp-1", "expect": true},
+    {"type": "role_assignable", "role": "custom-triage", "level": "DEPARTMENT", "node": "dept-urg", "expect": true,
+     "note": "assignable anywhere in the owner's subtree (descendant-or-self)"},
+    {"type": "role_assignable", "role": "custom-triage", "level": "FACILITY", "node": "hosp-2", "expect": false,
+     "note": "not assignable outside the owner's subtree"},
+    {"type": "role_assignable", "role": "custom-triage", "level": "NATIONAL", "node": null, "expect": false,
+     "note": "custom roles can never be assigned at root level"},
+    {"type": "can_grant_permission", "actor": "admin1", "role": "custom-triage", "permission": "patients.view_patient", "expect": true,
+     "note": "actor holds this permission effectively at the owner scope"},
+    {"type": "can_grant_permission", "actor": "admin1", "role": "custom-triage", "permission": "users.delete_user", "expect": false,
+     "note": "anti-escalation: cannot grant a permission the actor does not hold"},
+    {"type": "can_grant_permission", "actor": "admin2", "role": "custom-triage", "permission": "patients.view_patient", "expect": false,
+     "note": "actor's permissions are held at hosp-2, not at the role's owner scope hosp-1"}
+  ]
+}

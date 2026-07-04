@@ -1,0 +1,83 @@
+{
+  "description": "Assignment lifecycle (SPEC §8) evaluated at read time against a fixed clock: expiry, future validity, suspension, revocation, inactive principal, superuser semantics.",
+  "config": {
+    "hierarchy": ["GLOBAL", "ORGANIZATION"],
+    "root_level": "GLOBAL",
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [
+    {"id": "org-a", "level": "ORGANIZATION"}
+  ],
+  "roles": [
+    {"id": "editor", "permissions": ["content.change_article"], "owner": null}
+  ],
+  "principals": [
+    {
+      "id": "ok", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "editor", "level": "ORGANIZATION", "node": "org-a", "status": "ACTIVE",
+         "valid_from": "2026-07-01T00:00:00Z", "valid_until": "2026-12-31T00:00:00Z"}
+      ]
+    },
+    {
+      "id": "expired", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "editor", "level": "ORGANIZATION", "node": "org-a", "status": "ACTIVE",
+         "valid_from": null, "valid_until": "2026-07-01T00:00:00Z"}
+      ]
+    },
+    {
+      "id": "not-yet", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "editor", "level": "ORGANIZATION", "node": "org-a", "status": "ACTIVE",
+         "valid_from": "2026-08-01T00:00:00Z", "valid_until": null}
+      ]
+    },
+    {
+      "id": "suspended", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "editor", "level": "ORGANIZATION", "node": "org-a", "status": "SUSPENDED",
+         "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "revoked", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "editor", "level": "ORGANIZATION", "node": "org-a", "status": "REVOKED",
+         "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "deactivated", "active": false, "superuser": false,
+      "assignments": [
+        {"role": "editor", "level": "ORGANIZATION", "node": "org-a", "status": "ACTIVE",
+         "valid_from": null, "valid_until": null}
+      ]
+    },
+    {"id": "root-super", "active": true, "superuser": true, "assignments": []},
+    {"id": "off-super", "active": false, "superuser": true, "assignments": []}
+  ],
+  "resources": [
+    {"id": "article-1", "anchor": "org-a"}
+  ],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [
+    {"type": "perm", "principal": "ok", "permission": "content.change_article", "resource": "article-1", "expect": true,
+     "note": "ACTIVE and inside the validity window"},
+    {"type": "perm", "principal": "expired", "permission": "content.change_article", "resource": "article-1", "expect": false,
+     "note": "valid_until in the past — evaluated at read time, no scheduled job needed"},
+    {"type": "perm", "principal": "not-yet", "permission": "content.change_article", "resource": "article-1", "expect": false,
+     "note": "valid_from in the future"},
+    {"type": "perm", "principal": "suspended", "permission": "content.change_article", "resource": "article-1", "expect": false},
+    {"type": "perm", "principal": "revoked", "permission": "content.change_article", "resource": "article-1", "expect": false},
+    {"type": "perm", "principal": "deactivated", "permission": "content.change_article", "resource": "article-1", "expect": false,
+     "note": "inactive principal has no permissions regardless of assignments"},
+    {"type": "perm", "principal": "root-super", "permission": "content.change_article", "resource": "article-1", "expect": true,
+     "note": "superuser bypasses RBAC and scope"},
+    {"type": "perm", "principal": "off-super", "permission": "content.change_article", "resource": "article-1", "expect": false,
+     "note": "inactive is checked BEFORE superuser (SPEC §5 order)"},
+    {"type": "accessible_nodes", "principal": "expired", "level": "ORGANIZATION", "expect": [],
+     "note": "collection filtering also honours effectiveness"}
+  ]
+}

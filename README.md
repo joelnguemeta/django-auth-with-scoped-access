@@ -47,10 +47,11 @@ uv run pytest
 
 ## Status
 
-- [x] Spec v0.1.0-draft + conformance cases (coverage, lifecycle, tenancy, flat RBAC)
+- [x] Spec v0.1.0-draft + conformance cases (coverage, lifecycle, tenancy, flat RBAC, write guard, reauth, access summary)
 - [x] Core engine, models, permission backend
-- [ ] DRF glue (`[drf]` extra) — permissions, queryset mixin, `/me/access/`
-- [ ] Step-up re-authentication (`[reauth]` extra)
+- [x] DRF glue — `ScopedModelPermission`, `ScopeObjectPermission`, `ScopeQuerySetMixin`, `GET /me/access/`
+- [x] Step-up re-authentication — `ReAuthService` + pluggable verifiers, `RequireReAuth`, `ReAuthView`
+- [ ] Package migrations, swappable models, per-request caching
 - [ ] Migration guides (from per-level FK schemas, from role-checking code)
 
 License: TBD.

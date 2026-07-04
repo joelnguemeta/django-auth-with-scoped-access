@@ -1,0 +1,60 @@
+{
+  "description": "Write guard (SPEC §5): create/update admission is scope-only coverage of the resulting object's anchor; registered resources with an unresolvable anchor are denied to everyone except root scopes and superusers (SPEC §4.1).",
+  "config": {
+    "hierarchy": ["NATIONAL", "REGIONAL", "FACILITY"],
+    "root_level": "NATIONAL",
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [
+    {"id": "north", "level": "REGIONAL"},
+    {"id": "hosp-1", "level": "FACILITY", "parent": "north"},
+    {"id": "hosp-2", "level": "FACILITY", "parent": "north"}
+  ],
+  "roles": [
+    {"id": "doctor", "permissions": ["patients.add_patient"], "owner": null}
+  ],
+  "principals": [
+    {
+      "id": "fred", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "doctor", "level": "FACILITY", "node": "hosp-1", "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "rita", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "doctor", "level": "REGIONAL", "node": "north", "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    },
+    {
+      "id": "nate", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "doctor", "level": "NATIONAL", "node": null, "status": "ACTIVE", "valid_from": null, "valid_until": null}
+      ]
+    },
+    {"id": "root-super", "active": true, "superuser": true, "assignments": []}
+  ],
+  "resources": [
+    {"id": "rec-1", "anchor": "hosp-1"},
+    {"id": "rec-2", "anchor": "hosp-2"},
+    {"id": "orphan", "anchor": null, "registered": true},
+    {"id": "catalog", "anchor": null}
+  ],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [
+    {"type": "write_guard", "principal": "fred", "resource": "rec-1", "expect": true,
+     "note": "writes allowed inside the covered subtree"},
+    {"type": "write_guard", "principal": "fred", "resource": "rec-2", "expect": false,
+     "note": "cannot write into a sibling facility"},
+    {"type": "write_guard", "principal": "rita", "resource": "rec-2", "expect": true,
+     "note": "regional scope covers both facilities"},
+    {"type": "write_guard", "principal": "fred", "resource": "orphan", "expect": false,
+     "note": "registered resource with unresolvable anchor: deny by default"},
+    {"type": "write_guard", "principal": "nate", "resource": "orphan", "expect": true,
+     "note": "root scopes still cover unresolvable anchors"},
+    {"type": "write_guard", "principal": "root-super", "resource": "orphan", "expect": true},
+    {"type": "write_guard", "principal": "fred", "resource": "catalog", "expect": true,
+     "note": "global resources are not scope-restricted (RBAC still applies separately)"}
+  ]
+}

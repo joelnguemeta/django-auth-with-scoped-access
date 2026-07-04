@@ -26,5 +26,8 @@ Each implementation ships an **adapter** responsible for:
 | `cases/lifecycle.json` | Validity windows, suspension, revocation, inactive principal, superuser order (SPEC §5, §8) |
 | `cases/tenancy.json` | Custom-role visibility, subtree assignability, anti-escalation (SPEC §6) |
 | `cases/flat-rbac.json` | Empty hierarchy = plain RBAC degradation (SPEC §1) |
+| `cases/write-guard.json` | Scope-only write admission, unresolvable-anchor deny (SPEC §4.1, §5) |
+| `cases/reauth.json` | Step-up token flow: single-use, principal-bound, TTL, bulk invalidation (SPEC §7, §12.1.1) |
+| `cases/access-summary.json` | Effective-only introspection content (SPEC §10) |
 
-Not yet covered (needs cases before implementation): write guard on create/update (§5), duplicate prevention (§8.3), ReAuth flow (§7 — requires a stateful check format), `/me/access/` payload shape (§10).
+Not yet covered (needs cases before implementation): duplicate prevention (§8.3), lifecycle events emission (§9).

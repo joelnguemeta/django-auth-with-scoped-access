@@ -289,7 +289,22 @@ Shared, implementation-agnostic test cases live in `conformance/cases/*.json`. E
 }
 ```
 
-Check types (v1): `perm` (with optional `resource`), `accessible_nodes`, `resource_visible`, `role_visible`, `role_assignable` (role at level/node), `can_grant_permission`. `now` fixes the clock for temporal cases.
+Check types (v1): `perm` (with optional `resource`), `accessible_nodes`, `resource_visible`, `role_visible`, `role_assignable` (role at level/node), `can_grant_permission`, `write_guard` (scope-only write admission of §5: superuser, global resource, or an effective assignment covering the resource's anchor), `access_summary` (the engine-level content of §10: effective `permissions` union and effective `assignments` as `{role, level, scope}`). `now` fixes the clock for temporal cases.
+
+Resource fixtures: `"anchor": <node-id>` = registered resource; `"anchor": null` = **global** resource (materialized on an unregistered model) — unless `"registered": true`, which materializes a registered resource whose anchor resolves to nothing (§4.1 deny case).
+
+### 12.1.1 Stateful ReAuth scripts
+
+Cases exercising §7 carry a top-level `"reauth": {"ttl": <seconds>, "script": [...]}` executed in order against a clock starting at `now`. Principals MAY declare a `"password"`. Steps:
+
+```json
+{"op": "issue",   "principal": "alice", "password": "…", "expect": true, "save_as": "t1"}
+{"op": "consume", "principal": "alice", "token": "$t1", "expect": true}
+{"op": "advance", "seconds": 301}
+{"op": "invalidate_all", "principal": "alice"}
+```
+
+`issue.expect` states whether a token is obtained; `$name` references a saved token; `consume` of an unknown/expired/foreign/already-used token MUST be false, and a failed consume by the wrong principal MUST NOT burn the token.
 
 ### 12.2 Conformance claim
 

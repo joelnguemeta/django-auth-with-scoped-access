@@ -121,6 +121,51 @@ def has_perm(user, perm: str, obj=None, at=None) -> bool:
     return perm in user_permissions(user, obj, at)
 
 
+def user_covers(user, obj, at=None) -> bool:
+    """Scope-only admission (SPEC §5 write guard): does any effective
+    assignment cover `obj`? Use in create/update paths, where the object may
+    not be persisted yet — the RBAC check (`has_perm`) applies separately.
+    """
+    if not user.is_active:
+        return False
+    if user.is_superuser:
+        return True
+    kind, node = resolve_anchor(obj)
+    if kind == GLOBAL:
+        return True
+    for assignment in ScopeAssignment.objects.filter(user=user).effective(at):
+        if assignment.is_root_scope:
+            return True
+        if kind == NODE and node is not None and any(
+            _same_node(assignment, anc) for anc in iter_ancestors(node)
+        ):
+            return True
+    return False
+
+
+def access_summary(user, at=None) -> dict:
+    """Engine-level content of GET /me/access/ (SPEC §10): effective
+    assignments only, plus the union of their permissions.
+    """
+    assignments = []
+    perms: set[str] = set()
+    if user.is_active:
+        for a in effective_assignments(user, at):
+            role_perms = sorted(_role_perms(a.role))
+            perms.update(role_perms)
+            assignments.append(
+                {
+                    "role": a.role,
+                    "level": a.level,
+                    "scope": a.scope if a.scope_id else None,
+                    "status": a.status,
+                    "valid_until": a.valid_until,
+                    "permissions": role_perms,
+                }
+            )
+    return {"permissions": sorted(perms), "assignments": assignments}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Collection filtering (SPEC §4.3) — database-level, never per-row
 # ─────────────────────────────────────────────────────────────────────────────

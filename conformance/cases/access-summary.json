@@ -1,0 +1,45 @@
+{
+  "description": "Access introspection (SPEC §10): the summary exposes only EFFECTIVE assignments and the union of their permissions — expired or suspended grants are invisible.",
+  "config": {
+    "hierarchy": ["GLOBAL", "ORGANIZATION"],
+    "root_level": "GLOBAL",
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [
+    {"id": "org-a", "level": "ORGANIZATION"},
+    {"id": "org-b", "level": "ORGANIZATION"}
+  ],
+  "roles": [
+    {"id": "editor", "permissions": ["content.change_article", "content.view_article"], "owner": null},
+    {"id": "auditor", "permissions": ["content.view_article"], "owner": null}
+  ],
+  "principals": [
+    {
+      "id": "amy", "active": true, "superuser": false,
+      "assignments": [
+        {"role": "editor", "level": "ORGANIZATION", "node": "org-a", "status": "ACTIVE",
+         "valid_from": null, "valid_until": null},
+        {"role": "auditor", "level": "ORGANIZATION", "node": "org-b", "status": "ACTIVE",
+         "valid_from": null, "valid_until": "2026-07-01T00:00:00Z"},
+        {"role": "auditor", "level": "GLOBAL", "node": null, "status": "SUSPENDED",
+         "valid_from": null, "valid_until": null}
+      ]
+    },
+    {"id": "empty", "active": true, "superuser": false, "assignments": []}
+  ],
+  "resources": [],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [
+    {"type": "access_summary", "principal": "amy",
+     "expect": {
+       "permissions": ["content.change_article", "content.view_article"],
+       "assignments": [
+         {"role": "editor", "level": "ORGANIZATION", "scope": "org-a"}
+       ]
+     },
+     "note": "expired (org-b) and suspended (global) grants do not appear"},
+    {"type": "access_summary", "principal": "empty",
+     "expect": {"permissions": [], "assignments": []}}
+  ]
+}

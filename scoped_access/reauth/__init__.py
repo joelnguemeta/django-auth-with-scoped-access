@@ -1,7 +1,10 @@
-"""Step-up re-authentication (optional extra `[reauth]`) — SPEC §7.
+"""Step-up re-authentication (optional extra) — SPEC §7.
 
-TODO (spec-first: a stateful conformance check format is needed first):
-- ReAuthService (issue/consume/invalidate, cache-backed, single-use, TTL)
-- Pluggable verifiers (password first; PIN/TOTP/WebAuthn later)
-- RequireReAuth DRF permission + ReAuthView (X-ReAuth-Token contract)
+Framework-agnostic core: `ReAuthService` + pluggable `verifiers`.
+The HTTP contract (X-ReAuth-Token, /auth/reauth/) lives in `scoped_access.drf`.
 """
+
+from .service import ReAuthService
+from .verifiers import register as register_verifier
+
+__all__ = ["ReAuthService", "register_verifier"]

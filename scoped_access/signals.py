@@ -14,3 +14,7 @@ assignment_reactivated = Signal()
 assignment_revoked = Signal()
 # kwargs: role, added (list[str]), removed (list[str]), actor
 role_permissions_changed = Signal()
+# kwargs: user (never the token value)
+reauth_issued = Signal()
+reauth_consumed = Signal()
+reauth_failed = Signal()

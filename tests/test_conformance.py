@@ -8,16 +8,19 @@ against the engine's public API.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
+from django.core.cache import cache
+from django.test import override_settings
 
 from scoped_access import engine
 from scoped_access.models import Role, ScopeAssignment
+from scoped_access.reauth import ReAuthService
 from scoped_access.registry import resources
 from tests.testapp.models import GlobalThing, Node, Resource
 
@@ -75,6 +78,9 @@ class Fixture:
                 is_active=spec["active"],
                 is_superuser=spec["superuser"],
             )
+            if spec.get("password"):
+                user.set_password(spec["password"])
+                user.save()
             self.users[spec["id"]] = user
             for a in spec["assignments"]:
                 node = self.nodes[a["node"]] if a.get("node") else None
@@ -94,6 +100,9 @@ class Fixture:
                 self.resources[spec["id"]] = Resource.objects.create(
                     slug=spec["id"], anchor=self.nodes[spec["anchor"]]
                 )
+            elif spec.get("registered"):
+                # Registered but unresolvable anchor: SPEC §4.1 deny case.
+                self.resources[spec["id"]] = Resource.objects.create(slug=spec["id"], anchor=None)
             else:
                 # Fixture "anchor: null" means *global*: an unregistered model.
                 self.resources[spec["id"]] = GlobalThing.objects.create(slug=spec["id"])
@@ -123,7 +132,53 @@ def _run_check(fx: Fixture, chk: dict):
         return engine.can_grant_permission(
             fx.users[chk["actor"]], fx.roles[chk["role"]], chk["permission"], at=fx.now
         )
+    if kind == "write_guard":
+        return engine.user_covers(fx.users[chk["principal"]], fx.resources[chk["resource"]], at=fx.now)
+    if kind == "access_summary":
+        summary = engine.access_summary(fx.users[chk["principal"]], at=fx.now)
+        return {
+            "permissions": summary["permissions"],
+            "assignments": sorted(
+                (
+                    {
+                        "role": a["role"].name,
+                        "level": a["level"],
+                        "scope": a["scope"].slug if a["scope"] else None,
+                    }
+                    for a in summary["assignments"]
+                ),
+                key=lambda a: (a["role"], str(a["scope"])),
+            ),
+        }
     raise NotImplementedError(f"Unknown check type: {kind}")
+
+
+def _run_reauth_script(fx: Fixture, spec: dict) -> list[str]:
+    """Executes a SPEC §12.1.1 script; returns failure descriptions."""
+    failures, tokens, clock = [], {}, fx.now
+    for i, step in enumerate(spec["script"]):
+        op = step["op"]
+        if op == "advance":
+            clock += timedelta(seconds=step["seconds"])
+            continue
+        user = fx.users[step["principal"]]
+        if op == "invalidate_all":
+            ReAuthService.invalidate_all_for_user(user)
+            continue
+        if op == "issue":
+            token = ReAuthService.issue(user, password=step.get("password"), at=clock)
+            if step.get("save_as"):
+                tokens[step["save_as"]] = token
+            got = token is not None
+        elif op == "consume":
+            ref = step["token"]
+            token = tokens.get(ref[1:]) if ref.startswith("$") else ref
+            got = ReAuthService.consume(token, user, at=clock)
+        else:
+            raise NotImplementedError(f"Unknown reauth op: {op}")
+        if got != step["expect"]:
+            failures.append(f"  reauth step[{i}] {step} → got {got}")
+    return failures
 
 
 @pytest.mark.django_db
@@ -150,16 +205,29 @@ def test_conformance(case_path: Path, settings):
         "HIERARCHY": hierarchy,
         "ROLE_OWNER_LEVELS": cfg["role_owner_levels"],
         "GRANTABLE_PERMISSIONS": cfg["grantable_permissions"],
+        "REAUTH": {"ENABLED": True, "TTL": case.get("reauth", {}).get("ttl", 300)},
     }
 
     resources.clear()
     resources.register(Resource, anchor="anchor")
+    cache.clear()
 
     fx = Fixture(case)
     failures = []
     for i, chk in enumerate(case["checks"]):
         got = _run_check(fx, chk)
         expect = sorted(chk["expect"]) if isinstance(chk["expect"], list) else chk["expect"]
+        if isinstance(expect, dict) and "assignments" in expect:
+            expect = {
+                "permissions": sorted(expect["permissions"]),
+                "assignments": sorted(
+                    expect["assignments"], key=lambda a: (a["role"], str(a["scope"]))
+                ),
+            }
         if got != expect:
             failures.append(f"  check[{i}] {chk} → got {got}")
+
+    if "reauth" in case:
+        failures += _run_reauth_script(fx, case["reauth"])
+
     assert not failures, f"{case_path.name}: {len(failures)} check(s) failed:\n" + "\n".join(failures)

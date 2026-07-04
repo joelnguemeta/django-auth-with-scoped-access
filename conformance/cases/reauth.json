@@ -1,0 +1,43 @@
+{
+  "description": "Step-up re-authentication (SPEC §7): issuance requires a valid proof, tokens are single-use, principal-bound, TTL-limited, bulk-invalidatable; a failed consume by the wrong principal does not burn the token.",
+  "config": {
+    "hierarchy": [],
+    "root_level": null,
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [],
+  "roles": [],
+  "principals": [
+    {"id": "alice", "active": true, "superuser": false, "password": "s3cret", "assignments": []},
+    {"id": "bob", "active": true, "superuser": false, "password": "hunter2", "assignments": []}
+  ],
+  "resources": [],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [],
+  "reauth": {
+    "ttl": 300,
+    "script": [
+      {"op": "issue", "principal": "alice", "password": "wrong", "expect": false,
+       "note": "bad proof: no token"},
+      {"op": "issue", "principal": "alice", "password": "s3cret", "expect": true, "save_as": "t1"},
+      {"op": "consume", "principal": "bob", "token": "$t1", "expect": false,
+       "note": "principal-bound: someone else's token never verifies"},
+      {"op": "consume", "principal": "alice", "token": "$t1", "expect": true,
+       "note": "…and the failed foreign consume did not burn it"},
+      {"op": "consume", "principal": "alice", "token": "$t1", "expect": false,
+       "note": "single use"},
+      {"op": "issue", "principal": "alice", "password": "s3cret", "expect": true, "save_as": "t2"},
+      {"op": "advance", "seconds": 301},
+      {"op": "consume", "principal": "alice", "token": "$t2", "expect": false,
+       "note": "expired after TTL"},
+      {"op": "issue", "principal": "alice", "password": "s3cret", "expect": true, "save_as": "t3"},
+      {"op": "issue", "principal": "alice", "password": "s3cret", "expect": true, "save_as": "t4"},
+      {"op": "invalidate_all", "principal": "alice"},
+      {"op": "consume", "principal": "alice", "token": "$t3", "expect": false},
+      {"op": "consume", "principal": "alice", "token": "$t4", "expect": false,
+       "note": "bulk invalidation kills every outstanding token"},
+      {"op": "consume", "principal": "alice", "token": "not-a-token", "expect": false}
+    ]
+  }
+}

@@ -74,6 +74,7 @@ drf = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "djangorestframework" },
     { name = "pytest" },
     { name = "pytest-django" },
 ]
@@ -87,6 +88,7 @@ provides-extras = ["drf"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "djangorestframework", specifier = ">=3.14" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-django", specifier = ">=4.8" },
 ]

@@ -64,6 +64,30 @@ class Role(models.Model):
     def __str__(self) -> str:
         return self.name if self.is_system else f"{self.name} @ {self.owner}"
 
+    # ── Permission set changes (SPEC R6) — always through these ──────────
+    # Changing a role's permissions silently changes the rights of every
+    # assignee: it MUST emit role_permissions_changed (§9), which plain
+    # `role.permissions.add(...)` cannot attribute to an actor.
+
+    def _labels(self, perms) -> list[str]:
+        return sorted(f"{p.content_type.app_label}.{p.codename}" for p in perms)
+
+    def grant_permissions(self, *perms, by=None) -> None:
+        added = [p for p in perms if not self.permissions.filter(pk=p.pk).exists()]
+        self.permissions.add(*perms)
+        if added:
+            signals.role_permissions_changed.send(
+                sender=type(self), role=self, added=self._labels(added), removed=[], actor=by
+            )
+
+    def revoke_permissions(self, *perms, by=None) -> None:
+        removed = [p for p in perms if self.permissions.filter(pk=p.pk).exists()]
+        self.permissions.remove(*perms)
+        if removed:
+            signals.role_permissions_changed.send(
+                sender=type(self), role=self, added=[], removed=self._labels(removed), actor=by
+            )
+
 
 class RolePermission(models.Model):
     role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="role_permissions")
@@ -92,6 +116,15 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             models.Q(valid_from__isnull=True) | models.Q(valid_from__lte=at),
             models.Q(valid_until__isnull=True) | models.Q(valid_until__gt=at),
         )
+
+    def grant(self, *, user, role, level=None, scope=None, by=None, **kwargs):
+        """Create an assignment and emit assignment_granted (§9)."""
+        if scope is not None:
+            kwargs["scope_ct"] = ContentType.objects.get_for_model(type(scope))
+            kwargs["scope_id"] = str(scope.pk)
+        assignment = self.create(user=user, role=role, level=level, granted_by=by, **kwargs)
+        signals.assignment_granted.send(sender=self.model, assignment=assignment, actor=by)
+        return assignment
 
 
 class ScopeAssignment(models.Model):

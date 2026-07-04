@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+        django-version: ["4.2", "5.2"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install with pinned Django
+        run: |
+          uv sync --dev
+          uv pip install "Django~=${{ matrix.django-version }}.0"
+      - name: Django system checks on the test project
+        run: DJANGO_SETTINGS_MODULE=tests.settings PYTHONPATH=. uv run django-admin check
+      - name: Conformance + unit tests
+        run: uv run pytest -q

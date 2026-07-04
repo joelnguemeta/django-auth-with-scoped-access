@@ -8,7 +8,9 @@ version = "0.1.0.dev0"
 description = "RBAC + hierarchical scope-based authorization (ABAC) + step-up re-authentication for Django. Reference implementation of the Scoped Access specification."
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "PSE" }]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Joel Edmond Nguemeta" }]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Framework :: Django",

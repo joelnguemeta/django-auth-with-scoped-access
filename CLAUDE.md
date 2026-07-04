@@ -91,7 +91,9 @@ Algorithmes du moteur = généralisation directe de DME `users/utils/scopes.py` 
 - ✅ `SPEC.md` v0.1.0-draft rédigée (concepts, règles normatives §4–§8, ReAuth, `/me/access/`, format des cas de conformité).
 - ✅ Premiers cas de conformité : `conformance/cases/{coverage,lifecycle,tenancy,flat-rbac}.json` (+ `conformance/README.md` — contrat de l'adapter). Manquent encore : write guard, unicité §8.3, flow ReAuth, payload `/me/access/`.
 - ✅ SPEC relue et **validée par le propriétaire** (4 juillet 2026), y compris les micro-décisions : inactif testé avant superuser, pas d'implication entre permissions, superusers non exemptés du ReAuth, anchor null = deny, write guard normatif, cas de conformité append-only.
-- ⬜ Squelette du package + pyproject (extras `[drf]`, `[reauth]`) + moteur + adapter de conformité.
+- ✅ Package `scoped_access` : conf/registry/checks/signals, modèles (Role avec owner GFK, ScopeAssignment avec lifecycle), `engine.py` (covers, has_perm, accessible_nodes, scope_filter_q, R1/R2/R5), `ScopedPermissionBackend`. **Les 40 checks de conformité passent** (`uv run pytest`). Harnais : `tests/test_conformance.py` matérialise chaque cas JSON sur un modèle `Node` générique auto-référencé (levels partageant un modèle + `discriminator`).
+- ⬜ `scoped_access/drf/` et `scoped_access/reauth/` : stubs TODO — écrire d'abord les cas de conformité manquants (write guard, ReAuth, `/me/access/`), doctrine spec-first.
+- ⬜ Migrations Django du package (absentes : les tests passent par run_syncdb), modèles swappables, cache par requête, guide de migration DME/APSR.
 - ⬜ Moteur + backend + tests (app de test interne avec hiérarchie factice).
 - ⬜ Glue DRF, ReAuth.
 - ⬜ Guide de migration DME (fusion des 6 FK `scope_*` → GFK) puis APSR (fusion "tenant par attribut user" → assignation ; remplacement du role-checking).

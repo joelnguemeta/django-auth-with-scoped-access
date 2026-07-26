@@ -2,10 +2,10 @@ from django.apps import AppConfig
 
 
 class HelpdeskConfig(AppConfig):
-    name = 'helpdesk'
+    name = "helpdesk"
 
     def ready(self):
-        from scoped_access.registry import register
         from helpdesk.models import Ticket
+        from scoped_access.registry import register
 
-        register(Ticket, anchor='team')
+        register(Ticket, anchor="team")

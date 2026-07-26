@@ -31,9 +31,7 @@ def _walk_relation_path(model, path: str) -> tuple[str | None, object | None]:
 def check_scoped_access_config(app_configs, **kwargs):
     errors = []
     raw = getattr(settings, "SCOPED_ACCESS", {})
-    entries = [
-        {"level": e} if isinstance(e, str) else e for e in raw.get("HIERARCHY", [])
-    ]
+    entries = [{"level": e} if isinstance(e, str) else e for e in raw.get("HIERARCHY", [])]
 
     names = [e.get("level") for e in entries]
     if len(names) != len(set(names)):

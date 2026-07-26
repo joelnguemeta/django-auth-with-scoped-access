@@ -4,7 +4,7 @@ and lifecycle APIs invalidate it in-place.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone as tz
+from datetime import UTC, datetime
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -18,9 +18,7 @@ from scoped_access.models import Role, ScopeAssignment
 from tests.testapp.models import Node
 
 SCOPED_ACCESS_ORG = {
-    "HIERARCHY": [
-        {"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}
-    ],
+    "HIERARCHY": [{"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}],
 }
 
 
@@ -34,9 +32,7 @@ def world(settings, db):
     role.permissions.add(view)
     user = get_user_model().objects.create(username="amy")
     org = Node.objects.create(slug="org-a", level="ORGANIZATION")
-    ScopeAssignment.objects.grant(
-        user=user, role=role, level="ORGANIZATION", scope=org, valid_from=timezone.now()
-    )
+    ScopeAssignment.objects.grant(user=user, role=role, level="ORGANIZATION", scope=org, valid_from=timezone.now())
     return {"user": user, "role": role, "org": org, "change": change}
 
 
@@ -60,7 +56,7 @@ def test_explicit_clock_bypasses_cache(world):
     user = world["user"]
     with request_cache():
         engine.user_permissions(user)  # warm the "now" entry
-        past = datetime(2020, 1, 1, tzinfo=tz.utc)  # before the grant's valid_from
+        past = datetime(2020, 1, 1, tzinfo=UTC)  # before the grant's valid_from
         assert engine.user_permissions(user, at=past) == set()
 
 

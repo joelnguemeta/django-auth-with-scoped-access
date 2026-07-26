@@ -125,8 +125,7 @@ def user_permissions(user, obj=None, at=None) -> set[str]:
             covered = assignment.is_root_scope
         else:
             covered = assignment.is_root_scope or (
-                node is not None
-                and any(_same_node(assignment, anc) for anc in iter_ancestors(node))
+                node is not None and any(_same_node(assignment, anc) for anc in iter_ancestors(node))
             )
         if covered:
             perms |= _role_perms(assignment.role)
@@ -156,9 +155,7 @@ def user_covers(user, obj, at=None) -> bool:
     for assignment in effective_assignments(user, at):
         if assignment.is_root_scope:
             return True
-        if kind == NODE and node is not None and any(
-            _same_node(assignment, anc) for anc in iter_ancestors(node)
-        ):
+        if kind == NODE and node is not None and any(_same_node(assignment, anc) for anc in iter_ancestors(node)):
             return True
     return False
 
@@ -298,8 +295,7 @@ def role_assignable(role, level_name: str | None, node) -> bool:
         return False
     owner_ct = role.owner_ct_id
     return any(
-        str(anc.pk) == str(role.owner_id)
-        and ContentType.objects.get_for_model(type(anc)).pk == owner_ct
+        str(anc.pk) == str(role.owner_id) and ContentType.objects.get_for_model(type(anc)).pk == owner_ct
         for anc in iter_ancestors(node)
     )
 

@@ -41,9 +41,7 @@ def test_e001_duplicate_level_names():
 
 
 def test_e002_root_level_not_first():
-    assert "scoped_access.E002" in _error_ids(
-        HIERARCHY=[{"level": "A", "model": "testapp.Node"}, {"level": "ROOT"}]
-    )
+    assert "scoped_access.E002" in _error_ids(HIERARCHY=[{"level": "A", "model": "testapp.Node"}, {"level": "ROOT"}])
 
 
 def test_e003_missing_parent_accessor():
@@ -56,21 +54,15 @@ def test_e003_missing_parent_accessor():
 
 
 def test_e004_owner_level_not_modeled():
-    assert "scoped_access.E004" in _error_ids(
-        HIERARCHY=VALID_HIERARCHY, ROLE_OWNER_LEVELS=["NOPE"]
-    )
+    assert "scoped_access.E004" in _error_ids(HIERARCHY=VALID_HIERARCHY, ROLE_OWNER_LEVELS=["NOPE"])
 
 
 def test_e005_invalid_grantable_permissions():
-    assert "scoped_access.E005" in _error_ids(
-        HIERARCHY=VALID_HIERARCHY, GRANTABLE_PERMISSIONS=42
-    )
+    assert "scoped_access.E005" in _error_ids(HIERARCHY=VALID_HIERARCHY, GRANTABLE_PERMISSIONS=42)
 
 
 def test_e006_unloadable_model():
-    assert "scoped_access.E006" in _error_ids(
-        HIERARCHY=[{"level": "A", "model": "nosuchapp.Missing"}]
-    )
+    assert "scoped_access.E006" in _error_ids(HIERARCHY=[{"level": "A", "model": "nosuchapp.Missing"}])
 
 
 def test_e007_parent_accessor_missing_on_model():

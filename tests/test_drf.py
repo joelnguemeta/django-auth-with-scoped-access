@@ -30,9 +30,7 @@ from tests.testapp.models import Node, Resource
 factory = APIRequestFactory()
 
 SCOPED_ACCESS_ORG = {
-    "HIERARCHY": [
-        {"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}
-    ],
+    "HIERARCHY": [{"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}],
     "ROLE_OWNER_LEVELS": [],
     "GRANTABLE_PERMISSIONS": "self",
     "REAUTH": {"ENABLED": True, "TTL": 300},

@@ -16,7 +16,6 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
-from django.test import override_settings
 
 from scoped_access import engine
 from scoped_access.models import Role, ScopeAssignment
@@ -36,9 +35,7 @@ def _perm(label: str) -> Permission:
     """Materialize an opaque '<app>.<codename>' permission string."""
     app_label, codename = label.split(".", 1)
     ct, _ = ContentType.objects.get_or_create(app_label=app_label, model="conformanceobj")
-    perm, _ = Permission.objects.get_or_create(
-        content_type=ct, codename=codename, defaults={"name": label}
-    )
+    perm, _ = Permission.objects.get_or_create(content_type=ct, codename=codename, defaults={"name": label})
     return perm
 
 
@@ -129,9 +126,7 @@ def _run_check(fx: Fixture, chk: dict):
         node = fx.nodes[chk["node"]] if chk.get("node") else None
         return engine.role_assignable(fx.roles[chk["role"]], chk.get("level"), node)
     if kind == "can_grant_permission":
-        return engine.can_grant_permission(
-            fx.users[chk["actor"]], fx.roles[chk["role"]], chk["permission"], at=fx.now
-        )
+        return engine.can_grant_permission(fx.users[chk["actor"]], fx.roles[chk["role"]], chk["permission"], at=fx.now)
     if kind == "write_guard":
         return engine.user_covers(fx.users[chk["principal"]], fx.resources[chk["resource"]], at=fx.now)
     if kind == "access_summary":
@@ -225,9 +220,7 @@ def test_conformance(case_path: Path, settings):
         if isinstance(expect, dict) and "assignments" in expect:
             expect = {
                 "permissions": sorted(expect["permissions"]),
-                "assignments": sorted(
-                    expect["assignments"], key=lambda a: (a["role"], str(a["scope"]))
-                ),
+                "assignments": sorted(expect["assignments"], key=lambda a: (a["role"], str(a["scope"]))),
             }
         if got != expect:
             failures.append(f"  check[{i}] {chk} → got {got}")

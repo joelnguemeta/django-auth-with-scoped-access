@@ -43,11 +43,7 @@ class MeAccessView(APIView):
                             "system": a["role"].is_system,
                         },
                         "level": a["level"],
-                        "scope": (
-                            {"id": str(a["scope"].pk), "label": str(a["scope"])}
-                            if a["scope"]
-                            else None
-                        ),
+                        "scope": ({"id": str(a["scope"].pk), "label": str(a["scope"])} if a["scope"] else None),
                         "status": a["status"],
                         "valid_until": a["valid_until"],
                         "permissions": a["permissions"],

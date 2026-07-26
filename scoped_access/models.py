@@ -48,9 +48,7 @@ class AbstractRole(models.Model):
     )
 
     owner_level = models.CharField(max_length=50, null=True, blank=True)
-    owner_ct = models.ForeignKey(
-        ContentType, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
+    owner_ct = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     owner_id = models.CharField(max_length=64, null=True, blank=True)
     owner = GenericForeignKey("owner_ct", "owner_id")
 
@@ -117,18 +115,12 @@ class Role(AbstractRole):
 
 
 class RolePermission(models.Model):
-    role = models.ForeignKey(
-        role_model_label(), on_delete=models.CASCADE, related_name="role_permissions"
-    )
-    permission = models.ForeignKey(
-        "auth.Permission", on_delete=models.CASCADE, related_name="scoped_role_permissions"
-    )
+    role = models.ForeignKey(role_model_label(), on_delete=models.CASCADE, related_name="role_permissions")
+    permission = models.ForeignKey("auth.Permission", on_delete=models.CASCADE, related_name="scoped_role_permissions")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["role", "permission"], name="scoped_access_unique_role_perm")
-        ]
+        constraints = [models.UniqueConstraint(fields=["role", "permission"], name="scoped_access_unique_role_perm")]
 
 
 class AssignmentStatus(models.TextChoices):
@@ -153,6 +145,7 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             kwargs["scope_id"] = str(scope.pk)
             if level is None:
                 from .conf import get_config
+
                 cfg = get_config()
                 lvls = cfg.hierarchy.levels_for_model(type(scope))
                 if lvls:
@@ -170,23 +163,15 @@ class AbstractScopeAssignment(models.Model):
     Never hard-deleted: revocation keeps the row as its own audit trail.
     """
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="scoped_assignments"
-    )
-    role = models.ForeignKey(
-        role_model_label(), on_delete=models.PROTECT, related_name="assignments"
-    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="scoped_assignments")
+    role = models.ForeignKey(role_model_label(), on_delete=models.PROTECT, related_name="assignments")
 
     level = models.CharField(max_length=50, null=True, blank=True)
-    scope_ct = models.ForeignKey(
-        ContentType, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
+    scope_ct = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     scope_id = models.CharField(max_length=64, null=True, blank=True)
     scope = GenericForeignKey("scope_ct", "scope_id")
 
-    status = models.CharField(
-        max_length=10, choices=AssignmentStatus.choices, default=AssignmentStatus.ACTIVE
-    )
+    status = models.CharField(max_length=10, choices=AssignmentStatus.choices, default=AssignmentStatus.ACTIVE)
     valid_from = models.DateTimeField(null=True, blank=True)
     valid_until = models.DateTimeField(null=True, blank=True)
 

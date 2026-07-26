@@ -15,9 +15,7 @@ from scoped_access.models import AssignmentStatus, Role, ScopeAssignment
 from tests.testapp.models import Node
 
 SCOPED_ACCESS_ORG = {
-    "HIERARCHY": [
-        {"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}
-    ],
+    "HIERARCHY": [{"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}],
 }
 
 
@@ -65,8 +63,11 @@ def test_lifecycle_events_emitted_with_actor(world):
     revoked = Recorder(signals.assignment_revoked)
     try:
         assignment = ScopeAssignment.objects.grant(
-            user=world["user"], role=world["role"], level="ORGANIZATION",
-            scope=world["org"], by=world["admin"],
+            user=world["user"],
+            role=world["role"],
+            level="ORGANIZATION",
+            scope=world["org"],
+            by=world["admin"],
         )
         assignment.revoke(by=world["admin"], reason="offboarding")
     finally:

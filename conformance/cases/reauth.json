@@ -18,6 +18,8 @@
   "reauth": {
     "ttl": 300,
     "script": [
+      {"op": "issue", "principal": "alice", "verifier": "nope", "expect": false,
+       "note": "unknown verifier gracefully fails"},
       {"op": "issue", "principal": "alice", "password": "wrong", "expect": false,
        "note": "bad proof: no token"},
       {"op": "issue", "principal": "alice", "password": "s3cret", "expect": true, "save_as": "t1"},

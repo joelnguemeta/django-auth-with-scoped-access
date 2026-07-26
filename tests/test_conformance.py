@@ -166,7 +166,12 @@ def _run_reauth_script(fx: Fixture, spec: dict) -> list[str]:
             ReAuthService.invalidate_all_for_user(user)
             continue
         if op == "issue":
-            token = ReAuthService.issue(user, password=step.get("password"), at=clock)
+            kwargs = {}
+            if "password" in step:
+                kwargs["password"] = step["password"]
+            if "verifier" in step:
+                kwargs["verifier"] = step["verifier"]
+            token = ReAuthService.issue(user, at=clock, **kwargs)
             if step.get("save_as"):
                 tokens[step["save_as"]] = token
             got = token is not None

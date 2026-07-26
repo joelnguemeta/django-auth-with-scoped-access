@@ -152,7 +152,7 @@ Normative rules:
 
 Optional module. When enabled:
 
-1. **Issuance:** the principal presents a fresh proof to a **verifier** (v1: password; future: PIN, TOTP, WebAuthn). On success the implementation issues an opaque random token bound to the principal, stored server-side with TTL `reauth.ttl_seconds` (default 300).
+1. **Issuance:** the principal presents a fresh proof to a **verifier** (v1: password; future: PIN, TOTP, WebAuthn). On success the implementation issues an opaque random token bound to the principal, stored server-side with TTL `reauth.ttl_seconds` (default 300). Naming an **unknown verifier** MUST fail issuance exactly like a bad proof (no token, no server error) — verifier names are not an enumeration oracle.
 2. **Consumption:** a protected action MUST receive the token (HTTP: header `X-ReAuth-Token`). Verification MUST be atomic check-and-delete (**single use**), MUST match the requesting principal, and MUST fail on expiry.
 3. **Failure contract (HTTP):** status 403 with a machine-readable body containing at least `{"reauth_required": true}` so clients can trigger the flow.
 4. **Invalidation:** all outstanding tokens of a principal MUST be invalidated on credential change and SHOULD be invalidatable in bulk (per-principal index).
@@ -304,7 +304,7 @@ Cases exercising §7 carry a top-level `"reauth": {"ttl": <seconds>, "script": [
 {"op": "invalidate_all", "principal": "alice"}
 ```
 
-`issue.expect` states whether a token is obtained; `$name` references a saved token; `consume` of an unknown/expired/foreign/already-used token MUST be false, and a failed consume by the wrong principal MUST NOT burn the token.
+`issue.expect` states whether a token is obtained; `$name` references a saved token; `consume` of an unknown/expired/foreign/already-used token MUST be false, and a failed consume by the wrong principal MUST NOT burn the token. An `issue` step MAY carry a `"verifier"` key; an unknown verifier name MUST yield `expect: false` (§7.1).
 
 ### 12.2 Conformance claim
 

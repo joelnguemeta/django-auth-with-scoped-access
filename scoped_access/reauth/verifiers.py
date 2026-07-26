@@ -31,7 +31,7 @@ def register(verifier) -> None:
 
 
 def get(name: str):
-    return _VERIFIERS[name]
+    return _VERIFIERS.get(name)
 
 
 register(PasswordVerifier())

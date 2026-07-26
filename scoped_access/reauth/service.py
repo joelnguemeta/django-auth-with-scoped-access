@@ -25,7 +25,8 @@ class ReAuthService:
     @classmethod
     def issue(cls, user, *, verifier: str = "password", at=None, **credentials) -> str | None:
         """Verify the proof and mint a token; None on failure."""
-        if not verifiers.get(verifier).verify(user, **credentials):
+        verifier_inst = verifiers.get(verifier)
+        if not verifier_inst or not verifier_inst.verify(user, **credentials):
             signals.reauth_failed.send(sender=cls, user=user)
             return None
 
@@ -60,7 +61,9 @@ class ReAuthService:
             return False
         now = at or timezone.now()
         expires = timezone.datetime.fromisoformat(data["expires"])
-        cache.delete(key)  # single use — burned on success or expiry
+        if not cache.delete(key):  # single use — burned on success or expiry
+            signals.reauth_failed.send(sender=cls, user=user)
+            return False
         if now >= expires:
             signals.reauth_failed.send(sender=cls, user=user)
             return False

@@ -9,3 +9,5 @@ build/
 htmlcov/
 db.sqlite3
 .DS_Store
+.idea/
+.claude/

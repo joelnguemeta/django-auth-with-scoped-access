@@ -24,7 +24,13 @@ dependencies = ["Django>=4.2"]
 drf = ["djangorestframework>=3.14"]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-django>=4.8", "djangorestframework>=3.14"]
+dev = [
+    "pytest>=8",
+    "pytest-django>=4.8",
+    "djangorestframework>=3.14",
+    "djangorestframework-stubs>=3.17.0",
+    "djangorestframework-simplejwt>=5.5.1",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["scoped_access"]

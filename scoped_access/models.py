@@ -151,6 +151,12 @@ class ScopeAssignmentQuerySet(models.QuerySet):
         if scope is not None:
             kwargs["scope_ct"] = ContentType.objects.get_for_model(type(scope))
             kwargs["scope_id"] = str(scope.pk)
+            if level is None:
+                from .conf import get_config
+                cfg = get_config()
+                lvls = cfg.hierarchy.levels_for_model(type(scope))
+                if lvls:
+                    level = lvls[0].name
         assignment = self.create(user=user, role=role, level=level, granted_by=by, **kwargs)
         signals.assignment_granted.send(sender=self.model, assignment=assignment, actor=by)
         cache.invalidate_user(user.pk)

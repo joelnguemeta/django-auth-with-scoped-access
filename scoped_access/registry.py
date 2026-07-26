@@ -96,6 +96,10 @@ class ResourceRegistry:
     def is_registered(self, model) -> bool:
         return model in self._anchors
 
+    def items(self):
+        """(model, anchor) pairs — read-only view for introspection/checks."""
+        return self._anchors.items()
+
 
 resources = ResourceRegistry()
 

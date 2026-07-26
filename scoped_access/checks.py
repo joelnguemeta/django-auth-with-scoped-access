@@ -2,8 +2,29 @@
 
 from __future__ import annotations
 
+from django.apps import apps
 from django.conf import settings
 from django.core import checks
+from django.core.exceptions import FieldDoesNotExist
+
+
+def _walk_relation_path(model, path: str) -> tuple[str | None, object | None]:
+    """Follows a `__`-separated relation path from `model`.
+
+    Returns (bad_part, final_model): `bad_part` is the first segment that is
+    missing or non-relational (None when the whole path is valid), and
+    `final_model` is the model the path lands on (None on failure).
+    """
+    current = model
+    for part in path.split("__"):
+        try:
+            field = current._meta.get_field(part)
+        except FieldDoesNotExist:
+            return part, None
+        current = field.related_model
+        if current is None:
+            return part, None
+    return None, current
 
 
 @checks.register(checks.Tags.compatibility)
@@ -28,8 +49,21 @@ def check_scoped_access_config(app_configs, **kwargs):
         )
 
     modeled = [e for e in entries if e.get("model")]
-    for e in modeled[1:]:
-        if not e.get("parent"):
+    for i, e in enumerate(modeled):
+        model_label = e.get("model")
+        try:
+            model_class = apps.get_model(model_label)
+        except (LookupError, ValueError):
+            errors.append(
+                checks.Error(
+                    f"SCOPED_ACCESS: model '{model_label}' for level '{e.get('level')}' could not be loaded.",
+                    id="scoped_access.E006",
+                )
+            )
+            continue
+
+        parent = e.get("parent")
+        if i > 0 and not parent:
             errors.append(
                 checks.Error(
                     f"SCOPED_ACCESS: level '{e.get('level')}' needs a 'parent' accessor "
@@ -37,6 +71,19 @@ def check_scoped_access_config(app_configs, **kwargs):
                     id="scoped_access.E003",
                 )
             )
+
+        if parent:
+            # Multi-hop accessors ("unit__facility") are legal: the engine
+            # walks them with _follow() and joins them in ORM lookups.
+            bad_part, _final = _walk_relation_path(model_class, parent)
+            if bad_part is not None:
+                errors.append(
+                    checks.Error(
+                        f"SCOPED_ACCESS: parent accessor '{parent}' on model '{model_label}' "
+                        f"is invalid at segment '{bad_part}'.",
+                        id="scoped_access.E007",
+                    )
+                )
 
     modeled_names = {e["level"] for e in modeled}
     for owner_level in raw.get("ROLE_OWNER_LEVELS", []):
@@ -56,4 +103,18 @@ def check_scoped_access_config(app_configs, **kwargs):
                 id="scoped_access.E005",
             )
         )
+
+    from .registry import resources
+
+    for model, anchor in resources.items():
+        bad_part, _final = _walk_relation_path(model, anchor)
+        if bad_part is not None:
+            errors.append(
+                checks.Error(
+                    f"SCOPED_ACCESS: anchor '{anchor}' for model '{model._meta.label}' "
+                    f"is invalid at segment '{bad_part}'.",
+                    id="scoped_access.E008",
+                )
+            )
+
     return errors

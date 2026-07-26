@@ -1,0 +1,9 @@
+site_name: Django Scoped Access
+theme:
+  name: material
+  palette:
+    primary: indigo
+    accent: deep purple
+nav:
+  - Accueil: index.md
+  - Spécifications (SPEC): spec.md

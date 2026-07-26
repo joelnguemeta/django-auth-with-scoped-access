@@ -61,7 +61,7 @@ viewer.grant_permissions(view_ticket)
 
 # System role with full CRUD
 agent = Role.objects.create(name="agent")
-agent.grant_permissions(view_ticket, add_ticket, change_ticket)
+agent.grant_permissions(view_ticket, add_ticket, change_ticket, delete_ticket)
 
 # Custom role owned by Org A — visible only inside Acme Corp
 triage = Role.objects.create(name="triage-agent", owner=org_a)

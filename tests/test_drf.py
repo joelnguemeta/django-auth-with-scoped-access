@@ -21,6 +21,7 @@ from scoped_access.drf import (
     RequireReAuth,
     ScopeObjectPermission,
     ScopeQuerySetMixin,
+    ScopeWriteGuardMixin,
 )
 from scoped_access.models import Role, ScopeAssignment
 from scoped_access.registry import resources
@@ -47,6 +48,18 @@ class ResourceSerializer(serializers.ModelSerializer):
 class ResourceViewSet(ScopeQuerySetMixin, viewsets.ModelViewSet):
     queryset = Resource.objects.all()
     serializer_class = ResourceSerializer
+    permission_classes = [ScopeObjectPermission]
+
+
+class WritableResourceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Resource
+        fields = ["id", "slug", "anchor"]
+
+
+class GuardedResourceViewSet(ScopeWriteGuardMixin, ScopeQuerySetMixin, viewsets.ModelViewSet):
+    queryset = Resource.objects.all()
+    serializer_class = WritableResourceSerializer
     permission_classes = [ScopeObjectPermission]
 
 
@@ -103,6 +116,40 @@ def test_scope_object_permission_blocks_foreign_detail(org_world):
     force_authenticate(request, user=org_world["user"])
     assert view(request, pk=org_world["res_a"].pk).status_code == 200
     assert view(request, pk=org_world["res_b"].pk).status_code == 403
+
+
+def test_write_guard_allows_create_in_scope(org_world):
+    request = factory.post("/resources/", {"slug": "res-new", "anchor": org_world["org_a"].pk})
+    force_authenticate(request, user=org_world["user"])
+    response = GuardedResourceViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 201
+
+
+def test_write_guard_blocks_create_out_of_scope(org_world):
+    org_b = Node.objects.get(slug="org-b")
+    request = factory.post("/resources/", {"slug": "res-new", "anchor": org_b.pk})
+    force_authenticate(request, user=org_world["user"])
+    response = GuardedResourceViewSet.as_view({"post": "create"})(request)
+    assert response.status_code == 403
+
+
+def test_write_guard_blocks_moving_object_out_of_scope(org_world):
+    # res_a is in scope, so the object gate passes — the guard must still
+    # deny re-anchoring it onto org-b (SPEC §5: the NEW anchor is checked).
+    org_b = Node.objects.get(slug="org-b")
+    request = factory.patch(f"/resources/{org_world['res_a'].pk}/", {"anchor": org_b.pk})
+    force_authenticate(request, user=org_world["user"])
+    response = GuardedResourceViewSet.as_view({"patch": "partial_update"})(request, pk=org_world["res_a"].pk)
+    assert response.status_code == 403
+    org_world["res_a"].refresh_from_db()
+    assert org_world["res_a"].anchor == org_world["org_a"]
+
+
+def test_write_guard_allows_update_within_scope(org_world):
+    request = factory.patch(f"/resources/{org_world['res_a'].pk}/", {"slug": "renamed"})
+    force_authenticate(request, user=org_world["user"])
+    response = GuardedResourceViewSet.as_view({"patch": "partial_update"})(request, pk=org_world["res_a"].pk)
+    assert response.status_code == 200
 
 
 def test_me_access_payload(org_world):

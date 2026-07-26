@@ -1,6 +1,6 @@
 """DRF glue (optional extra `[drf]`) — SPEC §5 HTTP mapping, §7, §10."""
 
-from .mixins import ScopeQuerySetMixin
+from .mixins import ScopeQuerySetMixin, ScopeWriteGuardMixin
 from .permissions import RequireReAuth, ScopedModelPermission, ScopeObjectPermission
 from .views import MeAccessView, ReAuthView
 
@@ -10,5 +10,6 @@ __all__ = [
     "RequireReAuth",
     "ScopeObjectPermission",
     "ScopeQuerySetMixin",
+    "ScopeWriteGuardMixin",
     "ScopedModelPermission",
 ]

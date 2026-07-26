@@ -57,15 +57,15 @@ delete_ticket = Permission.objects.get(codename="delete_ticket")
 # ---------------------------------------------------------------------------
 # System role — owner=None means system-wide
 viewer = Role.objects.create(name="viewer")
-viewer.grant_permissions([view_ticket])
+viewer.grant_permissions(view_ticket)
 
 # System role with full CRUD
 agent = Role.objects.create(name="agent")
-agent.grant_permissions([view_ticket, add_ticket, change_ticket])
+agent.grant_permissions(view_ticket, add_ticket, change_ticket)
 
 # Custom role owned by Org A — visible only inside Acme Corp
 triage = Role.objects.create(name="triage-agent", owner=org_a)
-triage.grant_permissions([view_ticket, add_ticket])
+triage.grant_permissions(view_ticket, add_ticket)
 
 # ---------------------------------------------------------------------------
 # Users
@@ -75,14 +75,14 @@ bob   = User.objects.create_user("bob",   password="bob123")     # agent of Team
 carol = User.objects.create_user("carol", password="carol123")   # viewer across both orgs
 
 # Alice → agent role scoped to Org A (covers both teams)
-ScopeAssignment.objects.grant(user=alice, role=agent, scope=org_a, granted_by=alice)
+ScopeAssignment.objects.grant(user=alice, role=agent, scope=org_a, by=alice)
 
 # Bob → agent role scoped to Team A1 only
-ScopeAssignment.objects.grant(user=bob, role=agent, scope=team_a1, granted_by=alice)
+ScopeAssignment.objects.grant(user=bob, role=agent, scope=team_a1, by=alice)
 
 # Carol → viewer at Org A + Org B
-ScopeAssignment.objects.grant(user=carol, role=viewer, scope=org_a, granted_by=alice)
-ScopeAssignment.objects.grant(user=carol, role=viewer, scope=org_b, granted_by=alice)
+ScopeAssignment.objects.grant(user=carol, role=viewer, scope=org_a, by=alice)
+ScopeAssignment.objects.grant(user=carol, role=viewer, scope=org_b, by=alice)
 
 print("Seed complete.")
 print()

@@ -124,7 +124,7 @@ Where **effective** is defined in [§8.2](#82-effectiveness). Notes:
 - Global resources skip the *scope* check only; the RBAC check still applies.
 - The permission catalog is flat; there is no implication between permissions (`change` does not imply `view`).
 - HTTP mapping (RECOMMENDED for REST implementations): `GET/HEAD → view_*`, `POST → add_*`, `PUT/PATCH → change_*`, `DELETE → delete_*`; read access MUST require `view_*` (no anonymous-read default).
-- **Write guard:** create/update operations MUST validate that the *resulting* object's anchor is covered by the actor (object-level checks on input data, since the object may not exist yet).
+- **Write guard:** create/update operations MUST validate that the *resulting* object's anchor is covered by the actor (object-level checks on input data, since the object may not exist yet). This includes updates that *move* an object: the guard applies to the **new** anchor, not the stored one. HTTP: a write-guard failure maps to **403**.
 
 ---
 

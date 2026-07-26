@@ -7,12 +7,16 @@ evaluated at read time (SPEC §8.2).
 
 from __future__ import annotations
 
+import logging
+
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 
 from . import cache
 from .conf import get_assignment_model, get_config
 from .registry import resources
+
+logger = logging.getLogger("scoped_access")
 
 # Anchor resolution outcomes (SPEC §4.1)
 NODE = "node"
@@ -52,7 +56,7 @@ def iter_ancestors(node):
     while node is not None:
         yield node
         accessor = cfg.hierarchy.parent_accessor_for_model(type(node))
-        node = getattr(node, accessor) if accessor else None
+        node = _follow(node, accessor) if accessor else None
 
 
 def _same_node(assignment, node) -> bool:
@@ -192,6 +196,21 @@ def _up_path(hierarchy, from_rank: int, to_rank: int) -> str:
     return "__".join(hierarchy.levels[r].parent for r in range(from_rank, to_rank, -1))
 
 
+def _rank_or_none(hierarchy, assignment) -> int | None:
+    """Rank of an assignment's level; None (fail closed, logged) when the
+    stored level no longer exists in the configured hierarchy.
+    """
+    try:
+        return hierarchy.rank(assignment.level)
+    except KeyError:
+        logger.warning(
+            "scoped_access: assignment %s references unknown level '%s'; ignored (fail closed).",
+            assignment.pk,
+            assignment.level,
+        )
+        return None
+
+
 def accessible_nodes(user, level_name: str, at=None):
     """QuerySet of nodes at `level_name` the user's assignments reach."""
     cfg = get_config()
@@ -205,7 +224,9 @@ def accessible_nodes(user, level_name: str, at=None):
     for a in effective_assignments(user, at):
         if a.is_root_scope:
             return qs
-        a_rank = cfg.hierarchy.rank(a.level)
+        a_rank = _rank_or_none(cfg.hierarchy, a)
+        if a_rank is None:
+            continue
         if a_rank > target_rank:
             continue  # deeper assignments contribute nothing (no upward coverage)
         if a_rank == target_rank:
@@ -239,7 +260,9 @@ def scope_filter_q(user, model, at=None) -> Q:
     for a in effective_assignments(user, at):
         if a.is_root_scope:
             return Q()
-        a_rank = cfg.hierarchy.rank(a.level)
+        a_rank = _rank_or_none(cfg.hierarchy, a)
+        if a_rank is None:
+            continue
         for rank, _level in target_levels:
             if rank < a_rank:
                 continue

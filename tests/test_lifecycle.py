@@ -9,8 +9,10 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, transaction
+from django.db.models.deletion import ProtectedError
 
 from scoped_access import signals
+from scoped_access.exceptions import AssignmentDeletionError, InvalidAssignmentTransitionError
 from scoped_access.models import AssignmentStatus, Role, ScopeAssignment
 from tests.testapp.models import Node
 
@@ -72,6 +74,68 @@ def test_duplicate_live_global_assignment_rejected_but_regrant_after_revoke_ok(w
     regrant = grant()
     assert regrant.status == AssignmentStatus.ACTIVE
     assert ScopeAssignment.objects.count() == 2
+
+
+def test_valid_lifecycle_transitions(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+
+    assignment.suspend(by=world["admin"])
+    assert assignment.status == AssignmentStatus.SUSPENDED
+
+    assignment.reactivate(by=world["admin"])
+    assert assignment.status == AssignmentStatus.ACTIVE
+
+    assignment.suspend(by=world["admin"])
+    assignment.revoke(by=world["admin"], reason="offboarding")
+    assignment.refresh_from_db()
+    assert assignment.status == AssignmentStatus.REVOKED
+    assert assignment.revoked_by == world["admin"]
+    assert assignment.reason == "offboarding"
+
+
+@pytest.mark.parametrize("operation", ["suspend", "reactivate", "revoke"])
+def test_revoked_assignment_is_terminal(world, operation):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+    assignment.revoke(by=world["admin"])
+
+    with pytest.raises(InvalidAssignmentTransitionError):
+        getattr(assignment, operation)(by=world["admin"])
+
+    assignment.refresh_from_db()
+    assert assignment.status == AssignmentStatus.REVOKED
+
+
+def test_direct_status_changes_are_rejected(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+
+    assignment.status = AssignmentStatus.SUSPENDED
+    with pytest.raises(InvalidAssignmentTransitionError):
+        assignment.save(update_fields=["status"])
+    with pytest.raises(InvalidAssignmentTransitionError):
+        ScopeAssignment.objects.filter(pk=assignment.pk).update(status=AssignmentStatus.SUSPENDED)
+
+    assignment.refresh_from_db()
+    assert assignment.status == AssignmentStatus.ACTIVE
+
+
+def test_assignment_hard_delete_is_rejected(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+
+    with pytest.raises(AssignmentDeletionError):
+        assignment.delete()
+    with pytest.raises(AssignmentDeletionError):
+        ScopeAssignment.objects.filter(pk=assignment.pk).delete()
+
+    assert ScopeAssignment.objects.filter(pk=assignment.pk).exists()
+
+
+def test_deleting_principal_cannot_cascade_assignment_history(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+
+    with pytest.raises(ProtectedError):
+        world["user"].delete()
+
+    assert ScopeAssignment.objects.filter(pk=assignment.pk).exists()
 
 
 def test_lifecycle_events_emitted_with_actor(world):

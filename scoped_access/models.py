@@ -27,6 +27,10 @@ from .conf import (
     ensure_swappable_defaults,
     role_model_label,
 )
+from .exceptions import (
+    AssignmentDeletionError,
+    InvalidAssignmentTransitionError,
+)
 
 ensure_swappable_defaults()
 
@@ -155,6 +159,18 @@ class ScopeAssignmentQuerySet(models.QuerySet):
         cache.invalidate_user(user.pk)
         return assignment
 
+    def update(self, **kwargs):
+        """Prevent bulk updates from bypassing the lifecycle state machine."""
+        if "status" in kwargs:
+            raise InvalidAssignmentTransitionError(
+                "Assignment status must be changed through suspend(), reactivate(), or revoke()."
+            )
+        return super().update(**kwargs)
+
+    def delete(self):
+        """Assignment rows are an audit trail and cannot be hard-deleted."""
+        raise AssignmentDeletionError("Scope assignments must be revoked, not deleted.")
+
 
 class AbstractScopeAssignment(models.Model):
     """Grant of one role to one principal at one scope (SPEC §2).
@@ -163,7 +179,7 @@ class AbstractScopeAssignment(models.Model):
     Never hard-deleted: revocation keeps the row as its own audit trail.
     """
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="scoped_assignments")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="scoped_assignments")
     role = models.ForeignKey(role_model_label(), on_delete=models.PROTECT, related_name="assignments")
 
     level = models.CharField(max_length=50, null=True, blank=True)
@@ -200,24 +216,64 @@ class AbstractScopeAssignment(models.Model):
 
     # ── Lifecycle (SPEC §8.1) — always through these, never hard-delete ──
 
+    def save(self, *args, **kwargs):
+        """Reject direct status changes that bypass lifecycle methods."""
+        update_fields = kwargs.get("update_fields")
+        writes_status = update_fields is None or "status" in update_fields
+        if self.pk is not None and writes_status:
+            persisted_status = (
+                type(self)._base_manager.filter(pk=self.pk).values_list("status", flat=True).first()
+            )
+            if persisted_status is not None and persisted_status != self.status:
+                raise InvalidAssignmentTransitionError(
+                    "Assignment status must be changed through suspend(), reactivate(), or revoke()."
+                )
+        return super().save(*args, **kwargs)
+
+    def delete(self, using=None, keep_parents=False):
+        """Assignment rows are an audit trail and cannot be hard-deleted."""
+        raise AssignmentDeletionError("Scope assignments must be revoked, not deleted.")
+
+    def _transition(self, *, target, allowed_from, **changes) -> None:
+        """Apply a state transition atomically against the persisted status."""
+        if self.pk is None:
+            raise InvalidAssignmentTransitionError("An unsaved assignment cannot change status.")
+
+        changes["status"] = target
+        candidates = type(self)._base_manager.filter(pk=self.pk, status__in=allowed_from)
+        updated = models.QuerySet.update(candidates, **changes)
+        if updated != 1:
+            persisted_status = (
+                type(self)._base_manager.filter(pk=self.pk).values_list("status", flat=True).first()
+            )
+            if persisted_status is None:
+                raise type(self).DoesNotExist(f"Assignment {self.pk} no longer exists.")
+            self.status = persisted_status
+            raise InvalidAssignmentTransitionError(
+                f"Cannot transition assignment from {persisted_status} to {target}."
+            )
+
+        for field, value in changes.items():
+            setattr(self, field, value)
+
     def suspend(self, *, by=None, reason: str = "") -> None:
-        self.status = AssignmentStatus.SUSPENDED
-        self.save(update_fields=["status"])
+        self._transition(target=AssignmentStatus.SUSPENDED, allowed_from=(AssignmentStatus.ACTIVE,))
         signals.assignment_suspended.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
 
     def reactivate(self, *, by=None, reason: str = "") -> None:
-        self.status = AssignmentStatus.ACTIVE
-        self.save(update_fields=["status"])
+        self._transition(target=AssignmentStatus.ACTIVE, allowed_from=(AssignmentStatus.SUSPENDED,))
         signals.assignment_reactivated.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
 
     def revoke(self, *, by=None, reason: str = "") -> None:
-        self.status = AssignmentStatus.REVOKED
-        self.revoked_by = by
-        self.revoked_at = timezone.now()
-        self.reason = reason
-        self.save(update_fields=["status", "revoked_by", "revoked_at", "reason"])
+        self._transition(
+            target=AssignmentStatus.REVOKED,
+            allowed_from=(AssignmentStatus.ACTIVE, AssignmentStatus.SUSPENDED),
+            revoked_by=by,
+            revoked_at=timezone.now(),
+            reason=reason,
+        )
         signals.assignment_revoked.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
 

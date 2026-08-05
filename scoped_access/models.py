@@ -29,6 +29,7 @@ from .conf import (
 )
 from .exceptions import (
     AssignmentDeletionError,
+    AssignmentManagementPermissionError,
     AssignmentScopeError,
     InvalidAssignmentTransitionError,
     RoleAssignmentError,
@@ -198,7 +199,7 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             models.Q(valid_until__isnull=True) | models.Q(valid_until__gt=at),
         )
 
-    def grant(self, *, user, role, level=None, scope=None, by=None, **kwargs):
+    def grant(self, *, user, role, by, level=None, scope=None, **kwargs):
         """Create an assignment and emit assignment_granted (§9)."""
         if scope is not None:
             kwargs["scope_ct"] = ContentType.objects.get_for_model(type(scope))
@@ -223,6 +224,8 @@ class ScopeAssignmentQuerySet(models.QuerySet):
 
         if not engine.role_assignable(role, level, scope):
             raise RoleAssignmentError("A custom role can only be assigned inside its owner's subtree.")
+        if not engine.can_manage_assignment(by, scope):
+            raise AssignmentManagementPermissionError("The actor cannot manage assignments at the target scope.")
         assignment = self.create(user=user, role=role, level=level, granted_by=by, **kwargs)
         signals.assignment_granted.send(sender=self.model, assignment=assignment, actor=by)
         cache.invalidate_user(user.pk)

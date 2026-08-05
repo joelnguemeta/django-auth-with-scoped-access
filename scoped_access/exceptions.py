@@ -28,3 +28,7 @@ class DirectRolePermissionMutationError(RuntimeError):
 
 class AssignmentScopeError(ValueError):
     """Raised when an assignment's level and scope node are inconsistent."""
+
+
+class AssignmentManagementPermissionError(PermissionError):
+    """Raised when an actor cannot manage assignments at the target scope."""

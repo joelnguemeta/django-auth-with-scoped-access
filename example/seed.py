@@ -84,14 +84,14 @@ bob = User.objects.create_user("bob", password=bob_password)  # agent of Team A1
 carol = User.objects.create_user("carol", password=carol_password)  # viewer across both orgs
 
 # Alice → agent role scoped to Org A (covers both teams)
-ScopeAssignment.objects.grant(user=alice, role=agent, scope=org_a, by=alice)
+ScopeAssignment.objects.grant(user=alice, role=agent, scope=org_a, by=superadmin)
 
 # Bob → agent role scoped to Team A1 only
-ScopeAssignment.objects.grant(user=bob, role=agent, scope=team_a1, by=alice)
+ScopeAssignment.objects.grant(user=bob, role=agent, scope=team_a1, by=superadmin)
 
 # Carol → viewer at Org A + Org B
-ScopeAssignment.objects.grant(user=carol, role=viewer, scope=org_a, by=alice)
-ScopeAssignment.objects.grant(user=carol, role=viewer, scope=org_b, by=alice)
+ScopeAssignment.objects.grant(user=carol, role=viewer, scope=org_a, by=superadmin)
+ScopeAssignment.objects.grant(user=carol, role=viewer, scope=org_b, by=superadmin)
 
 print("Seed complete.")
 print()

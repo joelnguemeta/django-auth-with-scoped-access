@@ -33,7 +33,9 @@ def world(settings, db):
     role.grant_permissions(view, by=admin)
     user = get_user_model().objects.create(username="amy")
     org = Node.objects.create(slug="org-a", level="ORGANIZATION")
-    ScopeAssignment.objects.grant(user=user, role=role, level="ORGANIZATION", scope=org, valid_from=timezone.now())
+    ScopeAssignment.objects.grant(
+        user=user, role=role, by=admin, level="ORGANIZATION", scope=org, valid_from=timezone.now()
+    )
     return {"user": user, "admin": admin, "role": role, "org": org, "change": change}
 
 

@@ -400,3 +400,21 @@ def can_manage_role(actor, role, at=None) -> bool:
         and permission in _role_perms(assignment.role)
         for assignment in effective_assignments(actor, at)
     )
+
+
+def can_manage_assignment(actor, node=None, at=None) -> bool:
+    """Actor may create assignments at `node`, or globally when node is absent."""
+    if actor is None or not actor.is_active:
+        return False
+    if actor.is_superuser:
+        return True
+
+    permission = f"{get_assignment_model()._meta.app_label}.manage_assignments"
+    if node is not None:
+        return has_perm(actor, permission, node, at)
+    return any(
+        _assignment_scope_is_valid(assignment)
+        and assignment.is_root_scope
+        and permission in _role_perms(assignment.role)
+        for assignment in effective_assignments(actor, at)
+    )

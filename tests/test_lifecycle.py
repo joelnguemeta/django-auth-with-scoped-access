@@ -47,7 +47,7 @@ class Recorder:
 
 def test_duplicate_live_assignment_rejected_but_regrant_after_revoke_ok(world):
     grant = lambda: ScopeAssignment.objects.grant(  # noqa: E731
-        user=world["user"], role=world["role"], level="ORGANIZATION", scope=world["org"]
+        user=world["user"], role=world["role"], by=world["admin"], level="ORGANIZATION", scope=world["org"]
     )
     first = grant()
 
@@ -63,7 +63,7 @@ def test_duplicate_live_assignment_rejected_but_regrant_after_revoke_ok(world):
 @pytest.mark.parametrize("level", [None, "ROOT"], ids=["flat-rbac", "explicit-root"])
 def test_duplicate_live_global_assignment_rejected_but_regrant_after_revoke_ok(world, level):
     grant = lambda: ScopeAssignment.objects.grant(  # noqa: E731
-        user=world["user"], role=world["role"], level=level
+        user=world["user"], role=world["role"], by=world["admin"], level=level
     )
     first = grant()
 
@@ -77,7 +77,7 @@ def test_duplicate_live_global_assignment_rejected_but_regrant_after_revoke_ok(w
 
 
 def test_valid_lifecycle_transitions(world):
-    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
 
     assignment.suspend(by=world["admin"])
     assert assignment.status == AssignmentStatus.SUSPENDED
@@ -95,7 +95,7 @@ def test_valid_lifecycle_transitions(world):
 
 @pytest.mark.parametrize("operation", ["suspend", "reactivate", "revoke"])
 def test_revoked_assignment_is_terminal(world, operation):
-    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
     assignment.revoke(by=world["admin"])
 
     with pytest.raises(InvalidAssignmentTransitionError):
@@ -106,7 +106,7 @@ def test_revoked_assignment_is_terminal(world, operation):
 
 
 def test_direct_status_changes_are_rejected(world):
-    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
 
     assignment.status = AssignmentStatus.SUSPENDED
     with pytest.raises(InvalidAssignmentTransitionError):
@@ -119,7 +119,7 @@ def test_direct_status_changes_are_rejected(world):
 
 
 def test_assignment_hard_delete_is_rejected(world):
-    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
 
     with pytest.raises(AssignmentDeletionError):
         assignment.delete()
@@ -130,7 +130,7 @@ def test_assignment_hard_delete_is_rejected(world):
 
 
 def test_deleting_principal_cannot_cascade_assignment_history(world):
-    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"])
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
 
     with pytest.raises(ProtectedError):
         world["user"].delete()

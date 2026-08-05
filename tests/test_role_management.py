@@ -7,6 +7,7 @@ from django.contrib.contenttypes.models import ContentType
 
 from scoped_access import RoleService
 from scoped_access.exceptions import (
+    AssignmentManagementPermissionError,
     DirectRolePermissionMutationError,
     RoleAssignmentError,
     RoleManagementPermissionError,
@@ -35,12 +36,15 @@ def role_world(settings, db):
     org_b = Node.objects.create(slug="org-b", level="ORGANIZATION")
 
     manage_roles = Permission.objects.get(content_type__app_label="scoped_access", codename="manage_roles")
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access", codename="manage_assignments"
+    )
     ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
     view = Permission.objects.create(content_type=ct, codename="view_thing", name="Can view thing")
     delete = Permission.objects.create(content_type=ct, codename="delete_thing", name="Can delete thing")
 
     manager_role = Role.objects.create(name="organization role manager")
-    manager_role.grant_permissions(manage_roles, view, by=bootstrap)
+    manager_role.grant_permissions(manage_roles, manage_assignments, view, by=bootstrap)
     ScopeAssignment.objects.grant(user=manager, role=manager_role, scope=org_a, by=bootstrap)
 
     return {
@@ -111,6 +115,22 @@ def test_custom_role_assignment_is_limited_to_owner_subtree(role_world):
             user=role_world["outsider"], role=role, scope=role_world["org_b"], by=role_world["manager"]
         )
     with pytest.raises(RoleAssignmentError):
+        ScopeAssignment.objects.grant(user=role_world["outsider"], role=role, by=role_world["manager"])
+
+
+def test_assignment_grant_requires_manage_assignments_at_target_scope(role_world):
+    role = Role.objects.create(name="system-member")
+
+    assignment = ScopeAssignment.objects.grant(
+        user=role_world["outsider"], role=role, scope=role_world["org_a"], by=role_world["manager"]
+    )
+    assert assignment.scope == role_world["org_a"]
+
+    with pytest.raises(AssignmentManagementPermissionError):
+        ScopeAssignment.objects.grant(
+            user=role_world["outsider"], role=role, scope=role_world["org_b"], by=role_world["manager"]
+        )
+    with pytest.raises(AssignmentManagementPermissionError):
         ScopeAssignment.objects.grant(user=role_world["outsider"], role=role, by=role_world["manager"])
 
 

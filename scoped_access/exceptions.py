@@ -24,3 +24,7 @@ class RoleOwnershipError(ValueError):
 
 class DirectRolePermissionMutationError(RuntimeError):
     """Raised when role permissions bypass the actor-aware role API."""
+
+
+class AssignmentScopeError(ValueError):
+    """Raised when an assignment's level and scope node are inconsistent."""

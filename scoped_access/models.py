@@ -29,6 +29,7 @@ from .conf import (
 )
 from .exceptions import (
     AssignmentDeletionError,
+    AssignmentScopeError,
     InvalidAssignmentTransitionError,
     RoleAssignmentError,
     RoleManagementPermissionError,
@@ -202,13 +203,22 @@ class ScopeAssignmentQuerySet(models.QuerySet):
         if scope is not None:
             kwargs["scope_ct"] = ContentType.objects.get_for_model(type(scope))
             kwargs["scope_id"] = str(scope.pk)
-            if level is None:
-                from .conf import get_config
+            from .conf import get_config
 
-                cfg = get_config()
-                lvls = cfg.hierarchy.levels_for_model(type(scope))
-                if lvls:
-                    level = lvls[0].name
+            cfg = get_config()
+            matching_levels = [
+                candidate
+                for candidate in cfg.hierarchy.levels_for_model(type(scope))
+                if candidate.queryset().filter(pk=scope.pk).exists()
+            ]
+            if level is None:
+                if len(matching_levels) != 1:
+                    raise AssignmentScopeError(
+                        "The scope must match exactly one hierarchy level, or level must be provided explicitly."
+                    )
+                level = matching_levels[0].name
+            elif level not in {candidate.name for candidate in matching_levels}:
+                raise AssignmentScopeError("The assignment level does not match the scope node.")
         from . import engine
 
         if not engine.role_assignable(role, level, scope):

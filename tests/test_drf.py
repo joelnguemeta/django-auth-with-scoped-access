@@ -49,6 +49,17 @@ class ResourceViewSet(ScopeQuerySetMixin, viewsets.ModelViewSet):
     permission_classes = [ScopeObjectPermission]
 
 
+class NodeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Node
+        fields = ["id", "slug"]
+
+
+class NodeViewSet(ScopeQuerySetMixin, viewsets.ReadOnlyModelViewSet):
+    queryset = Node.objects.all()
+    serializer_class = NodeSerializer
+
+
 class WritableResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resource
@@ -107,6 +118,14 @@ def test_scope_queryset_mixin_filters_lists(org_world):
     response = ResourceViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 200
     assert [r["slug"] for r in response.data] == ["res-a"]
+
+
+def test_scope_queryset_mixin_filters_hierarchy_node_lists(org_world):
+    request = factory.get("/organizations/")
+    force_authenticate(request, user=org_world["user"])
+    response = NodeViewSet.as_view({"get": "list"})(request)
+    assert response.status_code == 200
+    assert [node["slug"] for node in response.data] == ["org-a"]
 
 
 def test_scope_object_permission_blocks_foreign_detail(org_world):

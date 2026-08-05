@@ -20,9 +20,7 @@ from scoped_access.models import Role, RolePermission, ScopeAssignment
 from tests.testapp.models import Node
 
 SCOPED_ACCESS_ORG = {
-    "HIERARCHY": [
-        {"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}
-    ],
+    "HIERARCHY": [{"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}],
     "ROLE_OWNER_LEVELS": ["ORGANIZATION"],
     "GRANTABLE_PERMISSIONS": "self",
 }
@@ -39,9 +37,7 @@ def role_world(settings, db):
     org_b = Node.objects.create(slug="org-b", level="ORGANIZATION")
 
     manage_roles = Permission.objects.get(content_type__app_label="scoped_access", codename="manage_roles")
-    manage_assignments = Permission.objects.get(
-        content_type__app_label="scoped_access", codename="manage_assignments"
-    )
+    manage_assignments = Permission.objects.get(content_type__app_label="scoped_access", codename="manage_assignments")
     ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
     view = Permission.objects.create(content_type=ct, codename="view_thing", name="Can view thing")
     delete = Permission.objects.create(content_type=ct, codename="delete_thing", name="Can delete thing")

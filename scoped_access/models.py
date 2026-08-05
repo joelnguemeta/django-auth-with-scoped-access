@@ -465,9 +465,7 @@ class AbstractScopeAssignment(models.Model):
         candidates = type(self)._base_manager.filter(pk=self.pk, status__in=allowed_from)
         updated = models.QuerySet.update(candidates, **changes)
         if updated != 1:
-            persisted_status = (
-                type(self)._base_manager.filter(pk=self.pk).values_list("status", flat=True).first()
-            )
+            persisted_status = type(self)._base_manager.filter(pk=self.pk).values_list("status", flat=True).first()
             if persisted_status is None:
                 raise type(self).DoesNotExist(f"Assignment {self.pk} no longer exists.")
             self.status = persisted_status
@@ -498,9 +496,7 @@ class AbstractScopeAssignment(models.Model):
         else:
             allowed = engine.can_manage_assignment(by, scope)
         if not allowed:
-            raise AssignmentManagementPermissionError(
-                "The actor cannot manage assignments at the assignment's scope."
-            )
+            raise AssignmentManagementPermissionError("The actor cannot manage assignments at the assignment's scope.")
 
     def suspend(self, *, by=None, reason: str = "") -> None:
         self._authorize_transition(by)
@@ -545,16 +541,14 @@ class ScopeAssignment(AbstractScopeAssignment):
             models.UniqueConstraint(
                 fields=["user", "role", "level"],
                 condition=(
-                    ~models.Q(status=AssignmentStatus.REVOKED)
-                    & models.Q(level__isnull=False, scope_id__isnull=True)
+                    ~models.Q(status=AssignmentStatus.REVOKED) & models.Q(level__isnull=False, scope_id__isnull=True)
                 ),
                 name="scoped_access_unique_live_root",
             ),
             models.UniqueConstraint(
                 fields=["user", "role"],
                 condition=(
-                    ~models.Q(status=AssignmentStatus.REVOKED)
-                    & models.Q(level__isnull=True, scope_id__isnull=True)
+                    ~models.Q(status=AssignmentStatus.REVOKED) & models.Q(level__isnull=True, scope_id__isnull=True)
                 ),
                 name="scoped_access_unique_live_flat",
             ),

@@ -131,7 +131,10 @@ def test_e010_reauth_ttl_must_be_a_positive_integer(ttl):
 
 
 def test_valid_reauth_config_passes():
-    assert _error_ids(
-        HIERARCHY=VALID_HIERARCHY,
-        REAUTH={"ENABLED": True, "TTL": 60},
-    ) == set()
+    assert (
+        _error_ids(
+            HIERARCHY=VALID_HIERARCHY,
+            REAUTH={"ENABLED": True, "TTL": 60},
+        )
+        == set()
+    )

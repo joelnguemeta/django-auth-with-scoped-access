@@ -34,9 +34,7 @@ def node_world(settings, db):
     facility_user = get_user_model().objects.create(username="facility-user")
     superuser = get_user_model().objects.create(username="root", is_superuser=True)
     inactive_user = get_user_model().objects.create(username="inactive", is_active=False)
-    inactive_superuser = get_user_model().objects.create(
-        username="inactive-root", is_active=False, is_superuser=True
-    )
+    inactive_superuser = get_user_model().objects.create(username="inactive-root", is_active=False, is_superuser=True)
     role = RoleService.create(by=superuser, name="member")
     ScopeAssignment.objects.grant(user=region_user, role=role, scope=north, by=superuser)
     ScopeAssignment.objects.grant(user=facility_user, role=role, scope=north_hospital, by=superuser)

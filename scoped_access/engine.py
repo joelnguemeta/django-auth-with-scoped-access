@@ -475,9 +475,7 @@ def can_manage_role(actor, role, at=None) -> bool:
 
     permission = f"{app_label}.manage_global_roles"
     return any(
-        _assignment_is_valid(assignment)
-        and assignment.is_root_scope
-        and permission in _role_perms(assignment.role)
+        _assignment_is_valid(assignment) and assignment.is_root_scope and permission in _role_perms(assignment.role)
         for assignment in effective_assignments(actor, at)
     )
 
@@ -493,8 +491,6 @@ def can_manage_assignment(actor, node=None, at=None) -> bool:
     if node is not None:
         return has_perm(actor, permission, node, at)
     return any(
-        _assignment_is_valid(assignment)
-        and assignment.is_root_scope
-        and permission in _role_perms(assignment.role)
+        _assignment_is_valid(assignment) and assignment.is_root_scope and permission in _role_perms(assignment.role)
         for assignment in effective_assignments(actor, at)
     )

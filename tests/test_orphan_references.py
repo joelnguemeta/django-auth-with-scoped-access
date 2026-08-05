@@ -11,9 +11,7 @@ from scoped_access.mutations import managed_assignment_mutation, managed_role_mu
 from tests.testapp.models import GlobalThing, Node
 
 SCOPED_ACCESS_ORG = {
-    "HIERARCHY": [
-        {"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}
-    ],
+    "HIERARCHY": [{"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}],
     "ROLE_OWNER_LEVELS": ["ORGANIZATION"],
 }
 

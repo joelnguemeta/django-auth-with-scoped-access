@@ -11,3 +11,6 @@ class ScopedAccessConfig(AppConfig):
             checks,  # noqa: F401 — registers system checks
             role_permissions,  # noqa: F401 — protects M2M mutations
         )
+        from .reauth.receivers import connect_password_change_receivers
+
+        connect_password_change_receivers()

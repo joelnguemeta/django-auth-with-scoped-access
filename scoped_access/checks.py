@@ -102,6 +102,33 @@ def check_scoped_access_config(app_configs, **kwargs):
             )
         )
 
+    reauth = raw.get("REAUTH", {})
+    if not isinstance(reauth, dict):
+        errors.append(
+            checks.Error(
+                "SCOPED_ACCESS: REAUTH must be a dictionary.",
+                id="scoped_access.E009",
+            )
+        )
+    else:
+        enabled = reauth.get("ENABLED", False)
+        if not isinstance(enabled, bool):
+            errors.append(
+                checks.Error(
+                    "SCOPED_ACCESS: REAUTH.ENABLED must be a boolean.",
+                    id="scoped_access.E009",
+                )
+            )
+
+        ttl = reauth.get("TTL", 300)
+        if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl <= 0:
+            errors.append(
+                checks.Error(
+                    "SCOPED_ACCESS: REAUTH.TTL must be a positive integer.",
+                    id="scoped_access.E010",
+                )
+            )
+
     from .registry import resources
 
     for model, anchor in resources.items():

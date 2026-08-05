@@ -1,4 +1,4 @@
-"""System checks E001–E008 (SPEC §3): configuration and registry validation."""
+"""System checks E001–E010 (SPEC §3): configuration and registry validation."""
 
 from __future__ import annotations
 
@@ -107,3 +107,31 @@ def test_e008_non_relational_anchor_segment():
 def test_e008_valid_anchor_passes():
     resources.register(Resource, anchor="anchor__parent")
     assert _error_ids(HIERARCHY=VALID_HIERARCHY) == set()
+
+
+@pytest.mark.parametrize("reauth", [[], "enabled", 1])
+def test_e009_reauth_must_be_a_dictionary(reauth):
+    assert "scoped_access.E009" in _error_ids(HIERARCHY=VALID_HIERARCHY, REAUTH=reauth)
+
+
+@pytest.mark.parametrize("enabled", [0, 1, "true", None])
+def test_e009_reauth_enabled_must_be_a_boolean(enabled):
+    assert "scoped_access.E009" in _error_ids(
+        HIERARCHY=VALID_HIERARCHY,
+        REAUTH={"ENABLED": enabled},
+    )
+
+
+@pytest.mark.parametrize("ttl", [True, False, 0, -1, 1.5, "300", None])
+def test_e010_reauth_ttl_must_be_a_positive_integer(ttl):
+    assert "scoped_access.E010" in _error_ids(
+        HIERARCHY=VALID_HIERARCHY,
+        REAUTH={"TTL": ttl},
+    )
+
+
+def test_valid_reauth_config_passes():
+    assert _error_ids(
+        HIERARCHY=VALID_HIERARCHY,
+        REAUTH={"ENABLED": True, "TTL": 60},
+    ) == set()

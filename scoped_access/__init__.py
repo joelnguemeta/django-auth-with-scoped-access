@@ -6,6 +6,7 @@ re-exported here — the import map hosts rely on:
     from scoped_access import register           # resource registry (anchors)
     from scoped_access import engine             # authorization engine
     from scoped_access import signals            # §9 lifecycle events
+    from scoped_access import RoleService        # actor-aware role management
     from scoped_access import ReAuthService      # step-up service
     from scoped_access import register_verifier  # custom step-up proofs
 
@@ -19,13 +20,14 @@ from importlib import import_module
 
 __version__ = "0.1.0.dev0"
 
-__all__ = ["ReAuthService", "engine", "register", "register_verifier", "signals"]
+__all__ = ["ReAuthService", "RoleService", "engine", "register", "register_verifier", "signals"]
 
 _LAZY = {
     "register": ("scoped_access.registry", "register"),
     "engine": ("scoped_access.engine", None),
     "signals": ("scoped_access.signals", None),
     "ReAuthService": ("scoped_access.reauth", "ReAuthService"),
+    "RoleService": ("scoped_access.services", "RoleService"),
     "register_verifier": ("scoped_access.reauth", "register_verifier"),
 }
 

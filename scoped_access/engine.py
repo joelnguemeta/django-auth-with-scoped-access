@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 
 from . import cache
@@ -65,8 +66,96 @@ def _same_node(assignment, node) -> bool:
     )
 
 
+def _assignment_scope_is_valid(assignment) -> bool:
+    """Validate the complete persisted level/scope shape."""
+    cfg = get_config()
+    if assignment.is_root_scope:
+        if assignment.scope_ct_id is not None:
+            logger.warning(
+                "scoped_access: root assignment %s retains scope metadata; ignored (fail closed).",
+                assignment.pk,
+            )
+            return False
+        if assignment.level is None:
+            return True
+        try:
+            return cfg.hierarchy.is_root(assignment.level)
+        except KeyError:
+            logger.warning(
+                "scoped_access: assignment %s references unknown level '%s'; ignored (fail closed).",
+                assignment.pk,
+                assignment.level,
+            )
+            return False
+
+    scope = _assignment_scope_or_none(assignment) if assignment.scope_ct_id is not None else None
+    if scope is not None and assignment.level is not None:
+        try:
+            level = cfg.hierarchy.level(assignment.level)
+        except KeyError:
+            level = None
+        if (
+            level is not None
+            and not level.is_root
+            and level.model is type(scope)
+            and level.queryset().filter(pk=scope.pk).exists()
+        ):
+            return True
+    logger.warning(
+        "scoped_access: assignment %s has an invalid level or scope; ignored (fail closed).",
+        assignment.pk,
+    )
+    return False
+
+
+def _assignment_scope_or_none(assignment):
+    """Resolve a generic assignment scope without trusting stored object IDs."""
+    try:
+        return assignment.scope
+    except (ObjectDoesNotExist, TypeError, ValueError):
+        return None
+
+
+def _role_owner_or_none(role):
+    """Resolve a generic role owner without trusting stored object IDs."""
+    try:
+        return role.owner
+    except (ObjectDoesNotExist, TypeError, ValueError):
+        return None
+
+
+def _assignment_is_valid(assignment) -> bool:
+    """Reject assignments whose custom role no longer fits their scope."""
+    store = cache.get_store()
+    key = ("assignment_valid", assignment._meta.label_lower, str(assignment.pk))
+    if store is not None and key in store:
+        return store[key]
+
+    valid = _assignment_scope_is_valid(assignment)
+    role = assignment.role
+    if valid and role.owner_id is not None:
+        if _role_owner_or_none(role) is None:
+            logger.warning(
+                "scoped_access: assignment %s uses a role with a missing owner; ignored (fail closed).",
+                assignment.pk,
+            )
+            valid = False
+        elif not role_assignable(role, assignment.level, _assignment_scope_or_none(assignment)):
+            logger.warning(
+                "scoped_access: assignment %s is outside its role owner's subtree; ignored (fail closed).",
+                assignment.pk,
+            )
+            valid = False
+
+    if store is not None:
+        store[key] = valid
+    return valid
+
+
 def covers(assignment, obj) -> bool:
     """SPEC §4.2 — inclusive downward, never upward."""
+    if not _assignment_is_valid(assignment):
+        return False
     if assignment.is_root_scope:
         return True
     kind, node = resolve_anchor(obj)
@@ -88,7 +177,7 @@ def _fetch_effective(user, at=None):
         .objects.filter(user=user)
         .effective(at)
         .select_related("role")
-        .prefetch_related("role__permissions__content_type")
+        .prefetch_related("role__permissions__content_type", "scope")
     )
 
 
@@ -119,14 +208,15 @@ def user_permissions(user, obj=None, at=None) -> set[str]:
     kind, node = (GLOBAL, None) if obj is None else resolve_anchor(obj)
     perms: set[str] = set()
     for assignment in effective_assignments(user, at):
+        if not _assignment_is_valid(assignment):
+            continue
         if kind == GLOBAL:
             covered = True
         elif kind == DENIED:
             covered = assignment.is_root_scope
         else:
             covered = assignment.is_root_scope or (
-                node is not None
-                and any(_same_node(assignment, anc) for anc in iter_ancestors(node))
+                node is not None and any(_same_node(assignment, anc) for anc in iter_ancestors(node))
             )
         if covered:
             perms |= _role_perms(assignment.role)
@@ -154,11 +244,11 @@ def user_covers(user, obj, at=None) -> bool:
     if kind == GLOBAL:
         return True
     for assignment in effective_assignments(user, at):
+        if not _assignment_is_valid(assignment):
+            continue
         if assignment.is_root_scope:
             return True
-        if kind == NODE and node is not None and any(
-            _same_node(assignment, anc) for anc in iter_ancestors(node)
-        ):
+        if kind == NODE and node is not None and any(_same_node(assignment, anc) for anc in iter_ancestors(node)):
             return True
     return False
 
@@ -171,6 +261,8 @@ def access_summary(user, at=None) -> dict:
     perms: set[str] = set()
     if user.is_active:
         for a in effective_assignments(user, at):
+            if not _assignment_is_valid(a):
+                continue
             role_perms = sorted(_role_perms(a.role))
             perms.update(role_perms)
             assignments.append(
@@ -216,12 +308,16 @@ def accessible_nodes(user, level_name: str, at=None):
     cfg = get_config()
     level = cfg.hierarchy.level(level_name)
     qs = level.queryset()
+    if not user.is_active:
+        return qs.none()
     if user.is_superuser:
         return qs
 
     target_rank = cfg.hierarchy.rank(level_name)
     q = Q(pk__in=[])
     for a in effective_assignments(user, at):
+        if not _assignment_is_valid(a):
+            continue
         if a.is_root_scope:
             return qs
         a_rank = _rank_or_none(cfg.hierarchy, a)
@@ -246,8 +342,25 @@ def _anchor_target_levels(model):
     return [(cfg.hierarchy.rank(lvl.name), lvl) for lvl in cfg.hierarchy.levels_for_model(current)]
 
 
+def _hierarchy_node_filter_q(user, model, at=None) -> Q | None:
+    """Return the union of accessible levels when `model` stores hierarchy nodes."""
+    levels = get_config().hierarchy.levels_for_model(model)
+    if not levels:
+        return None
+
+    q = Q(pk__in=[])
+    for level in levels:
+        q |= Q(pk__in=accessible_nodes(user, level.name, at).values("pk"))
+    return q
+
+
 def scope_filter_q(user, model, at=None) -> Q:
-    """Q filter restricting a registered resource model to the user's scope."""
+    """Q filter restricting a hierarchy node or registered resource model."""
+    if not user.is_active:
+        return Q(pk__in=[])
+    node_filter = _hierarchy_node_filter_q(user, model, at)
+    if node_filter is not None:
+        return node_filter
     if user.is_superuser:
         return Q()
     anchor = resources.anchor_for(model)
@@ -258,6 +371,8 @@ def scope_filter_q(user, model, at=None) -> Q:
     target_levels = _anchor_target_levels(model)
     q = Q(pk__in=[])
     for a in effective_assignments(user, at):
+        if not _assignment_is_valid(a):
+            continue
         if a.is_root_scope:
             return Q()
         a_rank = _rank_or_none(cfg.hierarchy, a)
@@ -283,9 +398,15 @@ def visible_resources(user, model, at=None):
 
 def role_visible(user, role, at=None) -> bool:
     """R1 — system roles everywhere; custom roles inside a covering scope."""
-    if role.owner_id is None or user.is_superuser:
+    if not user.is_active:
+        return False
+    if role.owner_id is None:
         return True
-    owner = role.owner
+    owner = _role_owner_or_none(role)
+    if owner is None:
+        return False
+    if user.is_superuser:
+        return True
     return any(covers(a, owner) for a in effective_assignments(user, at))
 
 
@@ -293,19 +414,31 @@ def role_assignable(role, level_name: str | None, node) -> bool:
     """R2 — custom roles only in the owner's subtree, never at root."""
     if role.owner_id is None:
         return True
+    if _role_owner_or_none(role) is None:
+        return False
     cfg = get_config()
-    if node is None or level_name is None or cfg.hierarchy.is_root(level_name):
+    if node is None or level_name is None:
+        return False
+    try:
+        level = cfg.hierarchy.level(level_name)
+        if level.is_root or level.model is not type(node) or not level.queryset().filter(pk=node.pk).exists():
+            return False
+    except KeyError:
         return False
     owner_ct = role.owner_ct_id
     return any(
-        str(anc.pk) == str(role.owner_id)
-        and ContentType.objects.get_for_model(type(anc)).pk == owner_ct
+        str(anc.pk) == str(role.owner_id) and ContentType.objects.get_for_model(type(anc)).pk == owner_ct
         for anc in iter_ancestors(node)
     )
 
 
 def can_grant_permission(actor, role, perm: str, at=None) -> bool:
     """R5 — anti-escalation: only delegate what you hold at the owner scope."""
+    if not actor.is_active:
+        return False
+    owner = _role_owner_or_none(role) if role.owner_id is not None else None
+    if role.owner_id is not None and owner is None:
+        return False
     if actor.is_superuser:
         return True
     policy = get_config().grantable_permissions
@@ -313,12 +446,51 @@ def can_grant_permission(actor, role, perm: str, at=None) -> bool:
         return True
     if isinstance(policy, (list, tuple, set)):
         return perm in policy
+    if callable(policy):
+        return bool(policy(actor=actor, role=role, permission=perm, at=at))
 
     # policy == "self"
     if role.owner_id is None:
         held = set()
         for a in effective_assignments(actor, at):
-            if a.is_root_scope:
+            if _assignment_is_valid(a) and a.is_root_scope:
                 held |= _role_perms(a.role)
         return perm in held
-    return perm in user_permissions(actor, role.owner, at)
+    return perm in user_permissions(actor, owner, at)
+
+
+def can_manage_role(actor, role, at=None) -> bool:
+    """R4 — actor may manage this system or custom role."""
+    if actor is None or not actor.is_active:
+        return False
+    owner = _role_owner_or_none(role) if role.owner_id is not None else None
+    if role.owner_id is not None and owner is None:
+        return False
+    if actor.is_superuser:
+        return True
+
+    app_label = role._meta.app_label
+    if role.owner_id is not None:
+        return has_perm(actor, f"{app_label}.manage_roles", owner, at)
+
+    permission = f"{app_label}.manage_global_roles"
+    return any(
+        _assignment_is_valid(assignment) and assignment.is_root_scope and permission in _role_perms(assignment.role)
+        for assignment in effective_assignments(actor, at)
+    )
+
+
+def can_manage_assignment(actor, node=None, at=None) -> bool:
+    """Actor may create assignments at `node`, or globally when node is absent."""
+    if actor is None or not actor.is_active:
+        return False
+    if actor.is_superuser:
+        return True
+
+    permission = f"{get_assignment_model()._meta.app_label}.manage_assignments"
+    if node is not None:
+        return has_perm(actor, permission, node, at)
+    return any(
+        _assignment_is_valid(assignment) and assignment.is_root_scope and permission in _role_perms(assignment.role)
+        for assignment in effective_assignments(actor, at)
+    )

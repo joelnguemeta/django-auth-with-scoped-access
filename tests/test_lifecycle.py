@@ -9,14 +9,24 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, transaction
+from django.db.models.deletion import ProtectedError
+from django.utils import timezone
 
-from scoped_access import signals
-from scoped_access.models import AssignmentStatus, Role, ScopeAssignment
+from scoped_access import RoleService, signals
+from scoped_access.exceptions import (
+    AssignmentDeletionError,
+    AssignmentManagementPermissionError,
+    AssignmentScopeError,
+    DirectAssignmentMutationError,
+    InvalidAssignmentTransitionError,
+)
+from scoped_access.models import AssignmentStatus, ScopeAssignment
 from tests.testapp.models import Node
 
 SCOPED_ACCESS_ORG = {
     "HIERARCHY": [
-        {"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}
+        {"level": "ROOT"},
+        {"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}},
     ],
 }
 
@@ -24,10 +34,12 @@ SCOPED_ACCESS_ORG = {
 @pytest.fixture
 def world(settings, db):
     settings.SCOPED_ACCESS = SCOPED_ACCESS_ORG
+    user = get_user_model().objects.create(username="amy")
+    admin = get_user_model().objects.create(username="boss", is_superuser=True)
     return {
-        "user": get_user_model().objects.create(username="amy"),
-        "admin": get_user_model().objects.create(username="boss"),
-        "role": Role.objects.create(name="member"),
+        "user": user,
+        "admin": admin,
+        "role": RoleService.create(by=admin, name="member"),
         "org": Node.objects.create(slug="org-a", level="ORGANIZATION"),
     }
 
@@ -47,7 +59,7 @@ class Recorder:
 
 def test_duplicate_live_assignment_rejected_but_regrant_after_revoke_ok(world):
     grant = lambda: ScopeAssignment.objects.grant(  # noqa: E731
-        user=world["user"], role=world["role"], level="ORGANIZATION", scope=world["org"]
+        user=world["user"], role=world["role"], by=world["admin"], level="ORGANIZATION", scope=world["org"]
     )
     first = grant()
 
@@ -60,13 +72,196 @@ def test_duplicate_live_assignment_rejected_but_regrant_after_revoke_ok(world):
     assert ScopeAssignment.objects.count() == 2  # history preserved, no hard delete
 
 
+@pytest.mark.parametrize("level", [None, "ROOT"], ids=["flat-rbac", "explicit-root"])
+def test_duplicate_live_global_assignment_rejected_but_regrant_after_revoke_ok(world, level):
+    grant = lambda: ScopeAssignment.objects.grant(  # noqa: E731
+        user=world["user"], role=world["role"], by=world["admin"], level=level
+    )
+    first = grant()
+
+    with pytest.raises(IntegrityError), transaction.atomic():  # SPEC §8.3
+        grant()
+
+    first.revoke(by=world["admin"], reason="rotation")
+    regrant = grant()
+    assert regrant.status == AssignmentStatus.ACTIVE
+    assert ScopeAssignment.objects.count() == 2
+
+
+def test_valid_lifecycle_transitions(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
+
+    assignment.suspend(by=world["admin"])
+    assert assignment.status == AssignmentStatus.SUSPENDED
+
+    assignment.reactivate(by=world["admin"])
+    assert assignment.status == AssignmentStatus.ACTIVE
+
+    assignment.suspend(by=world["admin"])
+    assignment.revoke(by=world["admin"], reason="offboarding")
+    assignment.refresh_from_db()
+    assert assignment.status == AssignmentStatus.REVOKED
+    assert assignment.revoked_by == world["admin"]
+    assert assignment.reason == "offboarding"
+
+
+@pytest.mark.parametrize("operation", ["suspend", "reactivate", "revoke"])
+def test_lifecycle_transitions_require_an_authorized_actor(world, operation):
+    assignment = ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=world["role"],
+        by=world["admin"],
+        level="ORGANIZATION",
+        scope=world["org"],
+    )
+    if operation == "reactivate":
+        assignment.suspend(by=world["admin"])
+        expected_status = AssignmentStatus.SUSPENDED
+    else:
+        expected_status = AssignmentStatus.ACTIVE
+
+    with pytest.raises(AssignmentManagementPermissionError):
+        getattr(assignment, operation)(by=world["user"])
+    with pytest.raises(AssignmentManagementPermissionError):
+        getattr(assignment, operation)()
+
+    assignment.refresh_from_db()
+    assert assignment.status == expected_status
+
+
+def test_lifecycle_authorization_uses_the_persisted_scope(world):
+    other_org = Node.objects.create(slug="org-b", level="ORGANIZATION")
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access",
+        codename="manage_assignments",
+    )
+    manager_role = RoleService.create(by=world["admin"], name="org-b assignment manager")
+    manager_role.grant_permissions(manage_assignments, by=world["admin"])
+    ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=manager_role,
+        by=world["admin"],
+        level="ORGANIZATION",
+        scope=other_org,
+    )
+    assignment = ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=world["role"],
+        by=world["admin"],
+        level="ORGANIZATION",
+        scope=world["org"],
+    )
+
+    assignment.scope = other_org
+    with pytest.raises(AssignmentManagementPermissionError):
+        assignment.revoke(by=world["user"])
+
+    assignment.refresh_from_db()
+    assert assignment.scope == world["org"]
+    assert assignment.status == AssignmentStatus.ACTIVE
+
+
+@pytest.mark.parametrize("operation", ["suspend", "reactivate", "revoke"])
+def test_revoked_assignment_is_terminal(world, operation):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
+    assignment.revoke(by=world["admin"])
+
+    with pytest.raises(InvalidAssignmentTransitionError):
+        getattr(assignment, operation)(by=world["admin"])
+
+    assignment.refresh_from_db()
+    assert assignment.status == AssignmentStatus.REVOKED
+
+
+def test_direct_status_changes_are_rejected(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
+
+    assignment.status = AssignmentStatus.SUSPENDED
+    with pytest.raises(InvalidAssignmentTransitionError):
+        assignment.save(update_fields=["status"])
+    with pytest.raises(InvalidAssignmentTransitionError):
+        ScopeAssignment.objects.filter(pk=assignment.pk).update(status=AssignmentStatus.SUSPENDED)
+
+    assignment.refresh_from_db()
+    assert assignment.status == AssignmentStatus.ACTIVE
+
+
+@pytest.mark.parametrize("field", ["status", "granted_by", "revoked_by", "reason", "scope_id"])
+def test_grant_rejects_forged_lifecycle_and_audit_fields(world, field):
+    with pytest.raises(TypeError, match="Unsupported assignment fields"):
+        ScopeAssignment.objects.grant(
+            user=world["user"],
+            role=world["role"],
+            by=world["admin"],
+            **{field: "forged"},
+        )
+
+
+def test_grant_rejects_non_root_level_without_scope(world):
+    with pytest.raises(AssignmentScopeError):
+        ScopeAssignment.objects.grant(
+            user=world["user"],
+            role=world["role"],
+            by=world["admin"],
+            level="ORGANIZATION",
+        )
+
+
+def test_grant_rejects_inverted_validity_window(world):
+    valid_from = timezone.now()
+    with pytest.raises(ValueError, match="valid_until must be later"):
+        ScopeAssignment.objects.grant(
+            user=world["user"],
+            role=world["role"],
+            by=world["admin"],
+            valid_from=valid_from,
+            valid_until=valid_from,
+        )
+
+
+def test_direct_validity_and_audit_mutations_are_rejected(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
+
+    with pytest.raises(DirectAssignmentMutationError):
+        ScopeAssignment.objects.filter(pk=assignment.pk).update(valid_until=timezone.now())
+
+    assignment.reason = "forged"
+    with pytest.raises(DirectAssignmentMutationError):
+        assignment.save(update_fields=["reason"])
+    with pytest.raises(DirectAssignmentMutationError):
+        assignment.save()
+
+
+def test_assignment_hard_delete_is_rejected(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
+
+    with pytest.raises(AssignmentDeletionError):
+        assignment.delete()
+    with pytest.raises(AssignmentDeletionError):
+        ScopeAssignment.objects.filter(pk=assignment.pk).delete()
+
+    assert ScopeAssignment.objects.filter(pk=assignment.pk).exists()
+
+
+def test_deleting_principal_cannot_cascade_assignment_history(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
+
+    with pytest.raises(ProtectedError):
+        world["user"].delete()
+
+    assert ScopeAssignment.objects.filter(pk=assignment.pk).exists()
+
+
 def test_lifecycle_events_emitted_with_actor(world):
     granted = Recorder(signals.assignment_granted)
     revoked = Recorder(signals.assignment_revoked)
     try:
         assignment = ScopeAssignment.objects.grant(
-            user=world["user"], role=world["role"], level="ORGANIZATION",
-            scope=world["org"], by=world["admin"],
+            user=world["user"],
+            role=world["role"],
+            level="ORGANIZATION",
+            scope=world["org"],
+            by=world["admin"],
         )
         assignment.revoke(by=world["admin"], reason="offboarding")
     finally:

@@ -35,6 +35,10 @@ dev = [
     "djangorestframework-stubs>=3.17.0",
     "djangorestframework-simplejwt>=5.5.1",
 ]
+lint = [
+    "pre-commit>=3.7.0",
+    "ruff>=0.5.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["scoped_access"]
@@ -42,3 +46,48 @@ packages = ["scoped_access"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 119
+target-version = "py311"
+exclude = ["migrations", "example/migrations"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+select = [
+    "F",    # Pyflakes
+    "E",    # Pycodestyle errors
+    "W",    # Pycodestyle warnings
+    "I",    # isort
+    "N",    # pep8-naming
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit (security)
+    "DJ",   # flake8-django
+    "D",    # pydocstyle
+]
+ignore = [
+    "D100", # Missing docstring in public module
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+    "D103", # Missing docstring in public function
+    "D104", # Missing docstring in public package
+    "D105", # Missing docstring in magic method
+    "D106", # Missing docstring in public nested class
+    "D107", # Missing docstring in __init__
+    "D205", # 1 blank line required between summary line and description
+    "D401", # First line should be in imperative mood
+    "S101", # Use of assert detected
+    "S105", # Possible hardcoded password
+    "DJ001", # Avoid using null=True on string-based fields
+    "DJ008", # Model does not define __str__ method
+    "DJ012", # Order of model's inner classes
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "D", "B018", "S105"]
+"example/test_*.py" = ["S101", "D", "S105"]
+"example/seed.py" = ["E402", "S106", "D"]

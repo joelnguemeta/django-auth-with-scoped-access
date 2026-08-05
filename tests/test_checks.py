@@ -1,4 +1,4 @@
-"""System checks E001–E008 (SPEC §3): configuration and registry validation."""
+"""System checks E001–E010 (SPEC §3): configuration and registry validation."""
 
 from __future__ import annotations
 
@@ -41,9 +41,7 @@ def test_e001_duplicate_level_names():
 
 
 def test_e002_root_level_not_first():
-    assert "scoped_access.E002" in _error_ids(
-        HIERARCHY=[{"level": "A", "model": "testapp.Node"}, {"level": "ROOT"}]
-    )
+    assert "scoped_access.E002" in _error_ids(HIERARCHY=[{"level": "A", "model": "testapp.Node"}, {"level": "ROOT"}])
 
 
 def test_e003_missing_parent_accessor():
@@ -56,21 +54,15 @@ def test_e003_missing_parent_accessor():
 
 
 def test_e004_owner_level_not_modeled():
-    assert "scoped_access.E004" in _error_ids(
-        HIERARCHY=VALID_HIERARCHY, ROLE_OWNER_LEVELS=["NOPE"]
-    )
+    assert "scoped_access.E004" in _error_ids(HIERARCHY=VALID_HIERARCHY, ROLE_OWNER_LEVELS=["NOPE"])
 
 
 def test_e005_invalid_grantable_permissions():
-    assert "scoped_access.E005" in _error_ids(
-        HIERARCHY=VALID_HIERARCHY, GRANTABLE_PERMISSIONS=42
-    )
+    assert "scoped_access.E005" in _error_ids(HIERARCHY=VALID_HIERARCHY, GRANTABLE_PERMISSIONS=42)
 
 
 def test_e006_unloadable_model():
-    assert "scoped_access.E006" in _error_ids(
-        HIERARCHY=[{"level": "A", "model": "nosuchapp.Missing"}]
-    )
+    assert "scoped_access.E006" in _error_ids(HIERARCHY=[{"level": "A", "model": "nosuchapp.Missing"}])
 
 
 def test_e007_parent_accessor_missing_on_model():
@@ -115,3 +107,34 @@ def test_e008_non_relational_anchor_segment():
 def test_e008_valid_anchor_passes():
     resources.register(Resource, anchor="anchor__parent")
     assert _error_ids(HIERARCHY=VALID_HIERARCHY) == set()
+
+
+@pytest.mark.parametrize("reauth", [[], "enabled", 1])
+def test_e009_reauth_must_be_a_dictionary(reauth):
+    assert "scoped_access.E009" in _error_ids(HIERARCHY=VALID_HIERARCHY, REAUTH=reauth)
+
+
+@pytest.mark.parametrize("enabled", [0, 1, "true", None])
+def test_e009_reauth_enabled_must_be_a_boolean(enabled):
+    assert "scoped_access.E009" in _error_ids(
+        HIERARCHY=VALID_HIERARCHY,
+        REAUTH={"ENABLED": enabled},
+    )
+
+
+@pytest.mark.parametrize("ttl", [True, False, 0, -1, 1.5, "300", None])
+def test_e010_reauth_ttl_must_be_a_positive_integer(ttl):
+    assert "scoped_access.E010" in _error_ids(
+        HIERARCHY=VALID_HIERARCHY,
+        REAUTH={"TTL": ttl},
+    )
+
+
+def test_valid_reauth_config_passes():
+    assert (
+        _error_ids(
+            HIERARCHY=VALID_HIERARCHY,
+            REAUTH={"ENABLED": True, "TTL": 60},
+        )
+        == set()
+    )

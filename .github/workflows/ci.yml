@@ -5,24 +5,58 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  quality:
+    name: Quality and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - name: Install development tools
+        run: uv sync --group dev --group lint
+      - name: Lint
+        run: uv run --no-sync ruff check .
+      - name: Check formatting
+        run: uv run --no-sync ruff format --check scoped_access tests example
+      - name: Check migrations
+        run: DJANGO_SETTINGS_MODULE=tests.settings uv run --no-sync python -m django makemigrations --check --dry-run
+      - name: Build package
+        run: uv build
+
   test:
+    name: Python ${{ matrix.python-version }} / Django ${{ matrix.django-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
-        django-version: ["4.2", "5.2"]
+        include:
+          - python-version: "3.11"
+            django-version: "4.2"
+          - python-version: "3.14"
+            django-version: "5.2"
+          - python-version: "3.14"
+            django-version: "6.0"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
       - name: Install with pinned Django
         run: |
-          uv sync --dev
+          uv sync --group dev
           uv pip install "Django~=${{ matrix.django-version }}.0"
       - name: Django system checks on the test project
-        run: DJANGO_SETTINGS_MODULE=tests.settings PYTHONPATH=. uv run django-admin check
+        run: DJANGO_SETTINGS_MODULE=tests.settings uv run --no-sync python -m django check
       - name: Conformance + unit tests
-        run: uv run pytest -q
+        run: uv run --no-sync pytest -q

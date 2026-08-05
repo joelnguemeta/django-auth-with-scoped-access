@@ -1,9 +1,9 @@
 from django.contrib import admin
 from django.urls import include, path
+from helpdesk.views import TicketViewSet
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from helpdesk.views import TicketViewSet
 from scoped_access.drf.views import MeAccessView, ReAuthView
 
 router = DefaultRouter()

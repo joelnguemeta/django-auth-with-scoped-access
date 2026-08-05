@@ -16,10 +16,10 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
-from django.test import override_settings
 
-from scoped_access import engine
+from scoped_access import RoleService, engine
 from scoped_access.models import Role, ScopeAssignment
+from scoped_access.mutations import managed_assignment_mutation
 from scoped_access.reauth import ReAuthService
 from scoped_access.registry import resources
 from tests.testapp.models import GlobalThing, Node, Resource
@@ -36,9 +36,7 @@ def _perm(label: str) -> Permission:
     """Materialize an opaque '<app>.<codename>' permission string."""
     app_label, codename = label.split(".", 1)
     ct, _ = ContentType.objects.get_or_create(app_label=app_label, model="conformanceobj")
-    perm, _ = Permission.objects.get_or_create(
-        content_type=ct, codename=codename, defaults={"name": label}
-    )
+    perm, _ = Permission.objects.get_or_create(content_type=ct, codename=codename, defaults={"name": label})
     return perm
 
 
@@ -51,6 +49,8 @@ class Fixture:
         self.roles: dict[str, Role] = {}
         self.users: dict[str, object] = {}
         self.resources: dict[str, object] = {}
+        user_model = get_user_model()
+        fixture_admin = user_model.objects.create(username="__conformance_admin__", is_superuser=True)
 
         for spec in case["nodes"]:
             self.nodes[spec["id"]] = Node.objects.create(
@@ -60,18 +60,15 @@ class Fixture:
             )
 
         for spec in case["roles"]:
-            role = Role.objects.create(name=spec["id"])
+            fields = {"name": spec["id"]}
             if spec.get("owner"):
                 owner = self.nodes[spec["owner"]]
-                role.owner_ct = ContentType.objects.get_for_model(Node)
-                role.owner_id = str(owner.pk)
-                role.owner_level = owner.level
-                role.save()
+                fields.update(owner=owner, owner_level=owner.level)
+            role = RoleService.create(by=fixture_admin, **fields)
             for label in spec["permissions"]:
-                role.permissions.add(_perm(label))
+                role.grant_permissions(_perm(label), by=fixture_admin)
             self.roles[spec["id"]] = role
 
-        user_model = get_user_model()
         for spec in case["principals"]:
             user = user_model.objects.create(
                 username=spec["id"],
@@ -84,16 +81,17 @@ class Fixture:
             self.users[spec["id"]] = user
             for a in spec["assignments"]:
                 node = self.nodes[a["node"]] if a.get("node") else None
-                ScopeAssignment.objects.create(
-                    user=user,
-                    role=self.roles[a["role"]],
-                    level=a.get("level"),
-                    scope_ct=ContentType.objects.get_for_model(Node) if node else None,
-                    scope_id=str(node.pk) if node else None,
-                    status=a["status"],
-                    valid_from=_dt(a.get("valid_from")),
-                    valid_until=_dt(a.get("valid_until")),
-                )
+                with managed_assignment_mutation():
+                    ScopeAssignment.objects.create(
+                        user=user,
+                        role=self.roles[a["role"]],
+                        level=a.get("level"),
+                        scope_ct=ContentType.objects.get_for_model(Node) if node else None,
+                        scope_id=str(node.pk) if node else None,
+                        status=a["status"],
+                        valid_from=_dt(a.get("valid_from")),
+                        valid_until=_dt(a.get("valid_until")),
+                    )
 
         for spec in case["resources"]:
             if spec.get("anchor"):
@@ -129,9 +127,7 @@ def _run_check(fx: Fixture, chk: dict):
         node = fx.nodes[chk["node"]] if chk.get("node") else None
         return engine.role_assignable(fx.roles[chk["role"]], chk.get("level"), node)
     if kind == "can_grant_permission":
-        return engine.can_grant_permission(
-            fx.users[chk["actor"]], fx.roles[chk["role"]], chk["permission"], at=fx.now
-        )
+        return engine.can_grant_permission(fx.users[chk["actor"]], fx.roles[chk["role"]], chk["permission"], at=fx.now)
     if kind == "write_guard":
         return engine.user_covers(fx.users[chk["principal"]], fx.resources[chk["resource"]], at=fx.now)
     if kind == "access_summary":
@@ -225,9 +221,7 @@ def test_conformance(case_path: Path, settings):
         if isinstance(expect, dict) and "assignments" in expect:
             expect = {
                 "permissions": sorted(expect["permissions"]),
-                "assignments": sorted(
-                    expect["assignments"], key=lambda a: (a["role"], str(a["scope"]))
-                ),
+                "assignments": sorted(expect["assignments"], key=lambda a: (a["role"], str(a["scope"]))),
             }
         if got != expect:
             failures.append(f"  check[{i}] {chk} → got {got}")

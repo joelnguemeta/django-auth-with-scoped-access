@@ -31,9 +31,7 @@ def _walk_relation_path(model, path: str) -> tuple[str | None, object | None]:
 def check_scoped_access_config(app_configs, **kwargs):
     errors = []
     raw = getattr(settings, "SCOPED_ACCESS", {})
-    entries = [
-        {"level": e} if isinstance(e, str) else e for e in raw.get("HIERARCHY", [])
-    ]
+    entries = [{"level": e} if isinstance(e, str) else e for e in raw.get("HIERARCHY", [])]
 
     names = [e.get("level") for e in entries]
     if len(names) != len(set(names)):
@@ -96,13 +94,40 @@ def check_scoped_access_config(app_configs, **kwargs):
             )
 
     grantable = raw.get("GRANTABLE_PERMISSIONS", "self")
-    if grantable not in ("self", "any") and not isinstance(grantable, (list, tuple, set)):
+    if grantable not in ("self", "any") and not isinstance(grantable, (list, tuple, set)) and not callable(grantable):
         errors.append(
             checks.Error(
-                "SCOPED_ACCESS: GRANTABLE_PERMISSIONS must be 'self', 'any' or an explicit list.",
+                "SCOPED_ACCESS: GRANTABLE_PERMISSIONS must be 'self', 'any', an explicit list or a callable.",
                 id="scoped_access.E005",
             )
         )
+
+    reauth = raw.get("REAUTH", {})
+    if not isinstance(reauth, dict):
+        errors.append(
+            checks.Error(
+                "SCOPED_ACCESS: REAUTH must be a dictionary.",
+                id="scoped_access.E009",
+            )
+        )
+    else:
+        enabled = reauth.get("ENABLED", False)
+        if not isinstance(enabled, bool):
+            errors.append(
+                checks.Error(
+                    "SCOPED_ACCESS: REAUTH.ENABLED must be a boolean.",
+                    id="scoped_access.E009",
+                )
+            )
+
+        ttl = reauth.get("TTL", 300)
+        if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl <= 0:
+            errors.append(
+                checks.Error(
+                    "SCOPED_ACCESS: REAUTH.TTL must be a positive integer.",
+                    id="scoped_access.E010",
+                )
+            )
 
     from .registry import resources
 

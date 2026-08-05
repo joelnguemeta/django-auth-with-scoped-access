@@ -8,4 +8,3 @@ class TicketSerializer(serializers.ModelSerializer):
         model = Ticket
         fields = ["id", "team", "title", "body", "is_closed", "created_at"]
         read_only_fields = ["created_at"]
-

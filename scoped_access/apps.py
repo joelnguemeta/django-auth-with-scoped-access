@@ -7,4 +7,10 @@ class ScopedAccessConfig(AppConfig):
     verbose_name = "Scoped Access"
 
     def ready(self):
-        from . import checks  # noqa: F401 — registers system checks
+        from . import (
+            checks,  # noqa: F401 — registers system checks
+            role_permissions,  # noqa: F401 — protects M2M mutations
+        )
+        from .reauth.receivers import connect_password_change_receivers
+
+        connect_password_change_receivers()

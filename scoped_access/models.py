@@ -27,8 +27,49 @@ from .conf import (
     ensure_swappable_defaults,
     role_model_label,
 )
+from .exceptions import (
+    AssignmentDeletionError,
+    AssignmentManagementPermissionError,
+    AssignmentScopeError,
+    DirectAssignmentMutationError,
+    DirectRoleMutationError,
+    InvalidAssignmentTransitionError,
+    RoleAssignmentError,
+    RoleManagementPermissionError,
+    RoleOwnershipError,
+)
 
 ensure_swappable_defaults()
+
+
+class RoleQuerySet(models.QuerySet):
+    def create(self, **kwargs):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService.create(..., by=actor).")
+        return super().create(**kwargs)
+
+    def bulk_create(self, objs, **kwargs):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Bulk role creation must run through an explicit trusted import.")
+        return super().bulk_create(objs, **kwargs)
+
+    def update(self, **kwargs):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService.update(..., by=actor).")
+        return super().update(**kwargs)
+
+    def delete(self):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService.delete(..., by=actor).")
+        return super().delete()
 
 
 class AbstractRole(models.Model):
@@ -48,14 +89,14 @@ class AbstractRole(models.Model):
     )
 
     owner_level = models.CharField(max_length=50, null=True, blank=True)
-    owner_ct = models.ForeignKey(
-        ContentType, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
+    owner_ct = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     owner_id = models.CharField(max_length=64, null=True, blank=True)
     owner = GenericForeignKey("owner_ct", "owner_id")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = RoleQuerySet.as_manager()
 
     class Meta:
         abstract = True
@@ -67,6 +108,52 @@ class AbstractRole(models.Model):
     def __str__(self) -> str:
         return self.name if self.is_system else f"{self.name} @ {self.owner}"
 
+    def _validate_owner(self) -> None:
+        """Enforce that custom-role owners belong to an allowed hierarchy level."""
+        if self.owner_id is None:
+            if self.owner_ct_id is not None or self.owner_level is not None:
+                raise RoleOwnershipError("A system role cannot define owner metadata without an owner.")
+            return
+        if self.owner_ct_id is None:
+            raise RoleOwnershipError("A custom role requires both owner_ct and owner_id.")
+
+        owner = self.owner
+        if owner is None:
+            raise RoleOwnershipError("The custom role owner does not exist.")
+
+        from .conf import get_config
+
+        cfg = get_config()
+        matching_levels = [
+            level
+            for level in cfg.hierarchy.levels_for_model(type(owner))
+            if level.queryset().filter(pk=owner.pk).exists()
+        ]
+        if self.owner_level is None:
+            if len(matching_levels) != 1:
+                raise RoleOwnershipError("owner_level is required when the owner model maps to multiple levels.")
+            self.owner_level = matching_levels[0].name
+        elif self.owner_level not in {level.name for level in matching_levels}:
+            raise RoleOwnershipError("owner_level does not match the configured hierarchy node.")
+
+        if self.owner_level not in cfg.role_owner_levels:
+            raise RoleOwnershipError(f"Level '{self.owner_level}' is not allowed to own roles.")
+
+    def save(self, *args, **kwargs):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService to create or edit roles.")
+        self._validate_owner()
+        return super().save(*args, **kwargs)
+
+    def delete(self, using=None, keep_parents=False):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService.delete(..., by=actor).")
+        return super().delete(using=using, keep_parents=keep_parents)
+
     # ── Permission set changes (SPEC R6) — always through these ──────────
     # Changing a role's permissions silently changes the rights of every
     # assignee: it MUST emit role_permissions_changed (§9), which plain
@@ -75,18 +162,35 @@ class AbstractRole(models.Model):
     def _labels(self, perms) -> list[str]:
         return sorted(f"{p.content_type.app_label}.{p.codename}" for p in perms)
 
-    def grant_permissions(self, *perms, by=None) -> None:
+    def grant_permissions(self, *perms, by) -> None:
+        from . import engine
+        from .role_permissions import managed_role_permission_mutation
+
+        if not engine.can_manage_role(by, self):
+            raise RoleManagementPermissionError("The actor cannot manage this role.")
         added = [p for p in perms if not self.permissions.filter(pk=p.pk).exists()]
-        self.permissions.add(*perms)
+        forbidden = [label for label in self._labels(added) if not engine.can_grant_permission(by, self, label)]
+        if forbidden:
+            raise RoleManagementPermissionError(
+                f"The actor cannot delegate these permissions: {', '.join(forbidden)}."
+            )
+        with managed_role_permission_mutation():
+            self.permissions.add(*perms)
         if added:
             signals.role_permissions_changed.send(
                 sender=type(self), role=self, added=self._labels(added), removed=[], actor=by
             )
             cache.invalidate_all()
 
-    def revoke_permissions(self, *perms, by=None) -> None:
+    def revoke_permissions(self, *perms, by) -> None:
+        from . import engine
+        from .role_permissions import managed_role_permission_mutation
+
+        if not engine.can_manage_role(by, self):
+            raise RoleManagementPermissionError("The actor cannot manage this role.")
         removed = [p for p in perms if self.permissions.filter(pk=p.pk).exists()]
-        self.permissions.remove(*perms)
+        with managed_role_permission_mutation():
+            self.permissions.remove(*perms)
         if removed:
             signals.role_permissions_changed.send(
                 sender=type(self), role=self, added=[], removed=self._labels(removed), actor=by
@@ -116,25 +220,80 @@ class Role(AbstractRole):
         ]
 
 
+class RolePermissionQuerySet(models.QuerySet):
+    def _assert_managed(self):
+        from .role_permissions import role_permission_mutation_is_managed
+
+        if not role_permission_mutation_is_managed():
+            raise DirectRoleMutationError(
+                "Use role.grant_permissions(..., by=actor) or role.revoke_permissions(..., by=actor)."
+            )
+
+    def create(self, **kwargs):
+        self._assert_managed()
+        return super().create(**kwargs)
+
+    def bulk_create(self, objs, **kwargs):
+        self._assert_managed()
+        return super().bulk_create(objs, **kwargs)
+
+    def delete(self):
+        self._assert_managed()
+        return super().delete()
+
+
 class RolePermission(models.Model):
-    role = models.ForeignKey(
-        role_model_label(), on_delete=models.CASCADE, related_name="role_permissions"
-    )
-    permission = models.ForeignKey(
-        "auth.Permission", on_delete=models.CASCADE, related_name="scoped_role_permissions"
-    )
+    role = models.ForeignKey(role_model_label(), on_delete=models.CASCADE, related_name="role_permissions")
+    permission = models.ForeignKey("auth.Permission", on_delete=models.CASCADE, related_name="scoped_role_permissions")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = RolePermissionQuerySet.as_manager()
+
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["role", "permission"], name="scoped_access_unique_role_perm")
-        ]
+        constraints = [models.UniqueConstraint(fields=["role", "permission"], name="scoped_access_unique_role_perm")]
+
+    def save(self, *args, **kwargs):
+        from .role_permissions import role_permission_mutation_is_managed
+
+        if not role_permission_mutation_is_managed():
+            raise DirectRoleMutationError("Use the actor-aware role permission methods.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, using=None, keep_parents=False):
+        from .role_permissions import role_permission_mutation_is_managed
+
+        if not role_permission_mutation_is_managed():
+            raise DirectRoleMutationError("Use the actor-aware role permission methods.")
+        return super().delete(using=using, keep_parents=keep_parents)
 
 
 class AssignmentStatus(models.TextChoices):
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
     REVOKED = "REVOKED"  # terminal
+
+
+_IMMUTABLE_ASSIGNMENT_FIELDS = frozenset(
+    {
+        "user",
+        "user_id",
+        "role",
+        "role_id",
+        "level",
+        "scope_ct",
+        "scope_ct_id",
+        "scope_id",
+        "valid_from",
+        "valid_until",
+        "granted_by",
+        "granted_by_id",
+        "granted_at",
+        "revoked_by",
+        "revoked_by_id",
+        "revoked_at",
+        "reason",
+    }
+)
 
 
 class ScopeAssignmentQuerySet(models.QuerySet):
@@ -146,21 +305,84 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             models.Q(valid_until__isnull=True) | models.Q(valid_until__gt=at),
         )
 
-    def grant(self, *, user, role, level=None, scope=None, by=None, **kwargs):
+    def grant(self, *, user, role, by, level=None, scope=None, **kwargs):
         """Create an assignment and emit assignment_granted (§9)."""
+        unsupported = set(kwargs) - {"valid_from", "valid_until"}
+        if unsupported:
+            raise TypeError(f"Unsupported assignment fields: {', '.join(sorted(unsupported))}.")
+
+        from .conf import get_config
+
+        cfg = get_config()
         if scope is not None:
             kwargs["scope_ct"] = ContentType.objects.get_for_model(type(scope))
             kwargs["scope_id"] = str(scope.pk)
+            matching_levels = [
+                candidate
+                for candidate in cfg.hierarchy.levels_for_model(type(scope))
+                if candidate.queryset().filter(pk=scope.pk).exists()
+            ]
             if level is None:
-                from .conf import get_config
-                cfg = get_config()
-                lvls = cfg.hierarchy.levels_for_model(type(scope))
-                if lvls:
-                    level = lvls[0].name
-        assignment = self.create(user=user, role=role, level=level, granted_by=by, **kwargs)
+                if len(matching_levels) != 1:
+                    raise AssignmentScopeError(
+                        "The scope must match exactly one hierarchy level, or level must be provided explicitly."
+                    )
+                level = matching_levels[0].name
+            elif level not in {candidate.name for candidate in matching_levels}:
+                raise AssignmentScopeError("The assignment level does not match the scope node.")
+        elif level is not None:
+            try:
+                is_root = cfg.hierarchy.is_root(level)
+            except KeyError:
+                is_root = False
+            if not is_root:
+                raise AssignmentScopeError("An assignment without a scope must use a configured root level or None.")
+
+        valid_from = kwargs.get("valid_from")
+        valid_until = kwargs.get("valid_until")
+        if valid_from is not None and valid_until is not None and valid_until <= valid_from:
+            raise ValueError("valid_until must be later than valid_from.")
+        from . import engine
+
+        if not engine.role_assignable(role, level, scope):
+            raise RoleAssignmentError("A custom role can only be assigned inside its owner's subtree.")
+        if not engine.can_manage_assignment(by, scope):
+            raise AssignmentManagementPermissionError("The actor cannot manage assignments at the target scope.")
+        from .mutations import managed_assignment_mutation
+
+        with managed_assignment_mutation():
+            assignment = self.create(user=user, role=role, level=level, granted_by=by, **kwargs)
         signals.assignment_granted.send(sender=self.model, assignment=assignment, actor=by)
         cache.invalidate_user(user.pk)
         return assignment
+
+    def create(self, **kwargs):
+        from .mutations import assignment_mutation_is_managed
+
+        if not assignment_mutation_is_managed():
+            raise DirectAssignmentMutationError("Use ScopeAssignment.objects.grant(..., by=actor).")
+        return super().create(**kwargs)
+
+    def bulk_create(self, objs, **kwargs):
+        from .mutations import assignment_mutation_is_managed
+
+        if not assignment_mutation_is_managed():
+            raise DirectAssignmentMutationError("Bulk assignment creation requires an explicit trusted import.")
+        return super().bulk_create(objs, **kwargs)
+
+    def update(self, **kwargs):
+        """Prevent bulk updates from bypassing the lifecycle state machine."""
+        if "status" in kwargs:
+            raise InvalidAssignmentTransitionError(
+                "Assignment status must be changed through suspend(), reactivate(), or revoke()."
+            )
+        if _IMMUTABLE_ASSIGNMENT_FIELDS.intersection(kwargs):
+            raise DirectAssignmentMutationError("Assignment identity and scope are immutable after creation.")
+        return super().update(**kwargs)
+
+    def delete(self):
+        """Assignment rows are an audit trail and cannot be hard-deleted."""
+        raise AssignmentDeletionError("Scope assignments must be revoked, not deleted.")
 
 
 class AbstractScopeAssignment(models.Model):
@@ -170,23 +392,15 @@ class AbstractScopeAssignment(models.Model):
     Never hard-deleted: revocation keeps the row as its own audit trail.
     """
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="scoped_assignments"
-    )
-    role = models.ForeignKey(
-        role_model_label(), on_delete=models.PROTECT, related_name="assignments"
-    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="scoped_assignments")
+    role = models.ForeignKey(role_model_label(), on_delete=models.PROTECT, related_name="assignments")
 
     level = models.CharField(max_length=50, null=True, blank=True)
-    scope_ct = models.ForeignKey(
-        ContentType, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
+    scope_ct = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     scope_id = models.CharField(max_length=64, null=True, blank=True)
     scope = GenericForeignKey("scope_ct", "scope_id")
 
-    status = models.CharField(
-        max_length=10, choices=AssignmentStatus.choices, default=AssignmentStatus.ACTIVE
-    )
+    status = models.CharField(max_length=10, choices=AssignmentStatus.choices, default=AssignmentStatus.ACTIVE)
     valid_from = models.DateTimeField(null=True, blank=True)
     valid_until = models.DateTimeField(null=True, blank=True)
 
@@ -215,24 +429,96 @@ class AbstractScopeAssignment(models.Model):
 
     # ── Lifecycle (SPEC §8.1) — always through these, never hard-delete ──
 
+    def save(self, *args, **kwargs):
+        """Reject direct changes to assignment identity, validity and audit data."""
+        from .mutations import assignment_mutation_is_managed
+
+        if self._state.adding and not assignment_mutation_is_managed():
+            raise DirectAssignmentMutationError("Use ScopeAssignment.objects.grant(..., by=actor).")
+        update_fields = kwargs.get("update_fields")
+        if self.pk is not None:
+            if update_fields is None:
+                raise DirectAssignmentMutationError(
+                    "Persisted assignments require an explicit, non-security-sensitive update_fields list."
+                )
+            update_fields = set(update_fields)
+            if "status" in update_fields:
+                raise InvalidAssignmentTransitionError(
+                    "Assignment status must be changed through suspend(), reactivate(), or revoke()."
+                )
+            if _IMMUTABLE_ASSIGNMENT_FIELDS.intersection(update_fields):
+                raise DirectAssignmentMutationError(
+                    "Assignment identity, validity and audit fields are immutable after creation."
+                )
+        return super().save(*args, **kwargs)
+
+    def delete(self, using=None, keep_parents=False):
+        """Assignment rows are an audit trail and cannot be hard-deleted."""
+        raise AssignmentDeletionError("Scope assignments must be revoked, not deleted.")
+
+    def _transition(self, *, target, allowed_from, **changes) -> None:
+        """Apply a state transition atomically against the persisted status."""
+        if self.pk is None:
+            raise InvalidAssignmentTransitionError("An unsaved assignment cannot change status.")
+
+        changes["status"] = target
+        candidates = type(self)._base_manager.filter(pk=self.pk, status__in=allowed_from)
+        updated = models.QuerySet.update(candidates, **changes)
+        if updated != 1:
+            persisted_status = type(self)._base_manager.filter(pk=self.pk).values_list("status", flat=True).first()
+            if persisted_status is None:
+                raise type(self).DoesNotExist(f"Assignment {self.pk} no longer exists.")
+            self.status = persisted_status
+            raise InvalidAssignmentTransitionError(
+                f"Cannot transition assignment from {persisted_status} to {target}."
+            )
+
+        for field, value in changes.items():
+            setattr(self, field, value)
+
+    def _authorize_transition(self, by) -> None:
+        """Authorize lifecycle changes against the persisted assignment.
+
+        Reloading prevents callers from changing ``scope_id`` only on the
+        Python instance and authorizing a transition against a fake scope.
+        """
+        if self.pk is None:
+            raise InvalidAssignmentTransitionError("An unsaved assignment cannot change status.")
+        self.refresh_from_db()
+
+        from . import engine
+
+        scope = self.scope if self.scope_id is not None else None
+        if self.scope_id is not None and scope is None:
+            # The original node cannot be resolved. Only a global assignment
+            # manager (or an active superuser) may clean up the orphaned row.
+            allowed = engine.can_manage_assignment(by, None)
+        else:
+            allowed = engine.can_manage_assignment(by, scope)
+        if not allowed:
+            raise AssignmentManagementPermissionError("The actor cannot manage assignments at the assignment's scope.")
+
     def suspend(self, *, by=None, reason: str = "") -> None:
-        self.status = AssignmentStatus.SUSPENDED
-        self.save(update_fields=["status"])
+        self._authorize_transition(by)
+        self._transition(target=AssignmentStatus.SUSPENDED, allowed_from=(AssignmentStatus.ACTIVE,))
         signals.assignment_suspended.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
 
     def reactivate(self, *, by=None, reason: str = "") -> None:
-        self.status = AssignmentStatus.ACTIVE
-        self.save(update_fields=["status"])
+        self._authorize_transition(by)
+        self._transition(target=AssignmentStatus.ACTIVE, allowed_from=(AssignmentStatus.SUSPENDED,))
         signals.assignment_reactivated.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
 
     def revoke(self, *, by=None, reason: str = "") -> None:
-        self.status = AssignmentStatus.REVOKED
-        self.revoked_by = by
-        self.revoked_at = timezone.now()
-        self.reason = reason
-        self.save(update_fields=["status", "revoked_by", "revoked_at", "reason"])
+        self._authorize_transition(by)
+        self._transition(
+            target=AssignmentStatus.REVOKED,
+            allowed_from=(AssignmentStatus.ACTIVE, AssignmentStatus.SUSPENDED),
+            revoked_by=by,
+            revoked_at=timezone.now(),
+            reason=reason,
+        )
         signals.assignment_revoked.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
 
@@ -242,11 +528,30 @@ class ScopeAssignment(AbstractScopeAssignment):
         swappable = ASSIGNMENT_MODEL_SETTING
         constraints = [
             # SPEC §8.3 — no duplicate among non-revoked assignments.
+            #
+            # The full tuple constraint cannot protect root assignments on
+            # databases where NULL values are distinct. Dedicated partial
+            # constraints cover both valid node-less shapes: an explicit
+            # root level and flat RBAC (level=None).
             models.UniqueConstraint(
                 fields=["user", "role", "level", "scope_ct", "scope_id"],
                 condition=~models.Q(status=AssignmentStatus.REVOKED),
                 name="scoped_access_unique_live_assignment",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["user", "role", "level"],
+                condition=(
+                    ~models.Q(status=AssignmentStatus.REVOKED) & models.Q(level__isnull=False, scope_id__isnull=True)
+                ),
+                name="scoped_access_unique_live_root",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "role"],
+                condition=(
+                    ~models.Q(status=AssignmentStatus.REVOKED) & models.Q(level__isnull=True, scope_id__isnull=True)
+                ),
+                name="scoped_access_unique_live_flat",
+            ),
         ]
         indexes = [
             models.Index(fields=["user", "status"], name="scoped_assign_user_status_idx"),

@@ -15,6 +15,7 @@ from rest_framework import serializers, viewsets
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework.views import APIView
 
+from scoped_access import RoleService
 from scoped_access.drf import (
     MeAccessView,
     ReAuthView,
@@ -23,16 +24,14 @@ from scoped_access.drf import (
     ScopeQuerySetMixin,
     ScopeWriteGuardMixin,
 )
-from scoped_access.models import Role, ScopeAssignment
+from scoped_access.models import ScopeAssignment
 from scoped_access.registry import resources
 from tests.testapp.models import Node, Resource
 
 factory = APIRequestFactory()
 
 SCOPED_ACCESS_ORG = {
-    "HIERARCHY": [
-        {"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}
-    ],
+    "HIERARCHY": [{"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}],
     "ROLE_OWNER_LEVELS": [],
     "GRANTABLE_PERMISSIONS": "self",
     "REAUTH": {"ENABLED": True, "TTL": 300},
@@ -49,6 +48,17 @@ class ResourceViewSet(ScopeQuerySetMixin, viewsets.ModelViewSet):
     queryset = Resource.objects.all()
     serializer_class = ResourceSerializer
     permission_classes = [ScopeObjectPermission]
+
+
+class NodeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Node
+        fields = ["id", "slug"]
+
+
+class NodeViewSet(ScopeQuerySetMixin, viewsets.ReadOnlyModelViewSet):
+    queryset = Node.objects.all()
+    serializer_class = NodeSerializer
 
 
 class WritableResourceSerializer(serializers.ModelSerializer):
@@ -86,18 +96,18 @@ def org_world(settings, db):
 
     ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
     perm, _ = Permission.objects.get_or_create(content_type=ct, codename="view_thing", defaults={"name": "v"})
-    role = Role.objects.create(name="member")
-    role.permissions.add(perm)
+    fixture_admin = get_user_model().objects.create(username="boss", is_superuser=True)
+    role = RoleService.create(by=fixture_admin, name="member")
+    role.grant_permissions(perm, by=fixture_admin)
 
     user = get_user_model().objects.create(username="amy")
     user.set_password("s3cret")
     user.save()
-    ScopeAssignment.objects.create(
+    ScopeAssignment.objects.grant(
         user=user,
         role=role,
-        level="ORGANIZATION",
-        scope_ct=ContentType.objects.get_for_model(Node),
-        scope_id=str(org_a.pk),
+        scope=org_a,
+        by=fixture_admin,
     )
     return {"user": user, "org_a": org_a, "res_a": res_a, "res_b": res_b}
 
@@ -108,6 +118,14 @@ def test_scope_queryset_mixin_filters_lists(org_world):
     response = ResourceViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 200
     assert [r["slug"] for r in response.data] == ["res-a"]
+
+
+def test_scope_queryset_mixin_filters_hierarchy_node_lists(org_world):
+    request = factory.get("/organizations/")
+    force_authenticate(request, user=org_world["user"])
+    response = NodeViewSet.as_view({"get": "list"})(request)
+    assert response.status_code == 200
+    assert [node["slug"] for node in response.data] == ["org-a"]
 
 
 def test_scope_object_permission_blocks_foreign_detail(org_world):

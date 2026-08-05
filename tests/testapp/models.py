@@ -11,9 +11,7 @@ from django.db import models
 class Node(models.Model):
     slug = models.SlugField(unique=True)
     level = models.CharField(max_length=50)
-    parent = models.ForeignKey(
-        "self", null=True, blank=True, on_delete=models.CASCADE, related_name="children"
-    )
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="children")
 
     def __str__(self) -> str:
         return f"{self.slug} ({self.level})"

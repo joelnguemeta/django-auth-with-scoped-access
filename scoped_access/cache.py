@@ -19,9 +19,7 @@ from __future__ import annotations
 import contextvars
 from contextlib import contextmanager
 
-_store: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
-    "scoped_access_request_cache", default=None
-)
+_store: contextvars.ContextVar[dict | None] = contextvars.ContextVar("scoped_access_request_cache", default=None)
 
 
 @contextmanager

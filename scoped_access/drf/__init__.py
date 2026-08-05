@@ -4,8 +4,7 @@ try:
     import rest_framework  # noqa: F401
 except ImportError as exc:
     raise ImportError(
-        "scoped_access.drf needs djangorestframework. "
-        "Install the extra: pip install django-scoped-access[drf]"
+        "scoped_access.drf needs djangorestframework. Install the extra: pip install django-scoped-access[drf]"
     ) from exc
 
 from .mixins import ScopeQuerySetMixin, ScopeWriteGuardMixin

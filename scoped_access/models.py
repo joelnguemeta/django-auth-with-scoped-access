@@ -435,17 +435,44 @@ class AbstractScopeAssignment(models.Model):
         for field, value in changes.items():
             setattr(self, field, value)
 
+    def _authorize_transition(self, by) -> None:
+        """Authorize lifecycle changes against the persisted assignment.
+
+        Reloading prevents callers from changing ``scope_id`` only on the
+        Python instance and authorizing a transition against a fake scope.
+        """
+        if self.pk is None:
+            raise InvalidAssignmentTransitionError("An unsaved assignment cannot change status.")
+        self.refresh_from_db()
+
+        from . import engine
+
+        scope = self.scope if self.scope_id is not None else None
+        if self.scope_id is not None and scope is None:
+            # The original node cannot be resolved. Only a global assignment
+            # manager (or an active superuser) may clean up the orphaned row.
+            allowed = engine.can_manage_assignment(by, None)
+        else:
+            allowed = engine.can_manage_assignment(by, scope)
+        if not allowed:
+            raise AssignmentManagementPermissionError(
+                "The actor cannot manage assignments at the assignment's scope."
+            )
+
     def suspend(self, *, by=None, reason: str = "") -> None:
+        self._authorize_transition(by)
         self._transition(target=AssignmentStatus.SUSPENDED, allowed_from=(AssignmentStatus.ACTIVE,))
         signals.assignment_suspended.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
 
     def reactivate(self, *, by=None, reason: str = "") -> None:
+        self._authorize_transition(by)
         self._transition(target=AssignmentStatus.ACTIVE, allowed_from=(AssignmentStatus.SUSPENDED,))
         signals.assignment_reactivated.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
 
     def revoke(self, *, by=None, reason: str = "") -> None:
+        self._authorize_transition(by)
         self._transition(
             target=AssignmentStatus.REVOKED,
             allowed_from=(AssignmentStatus.ACTIVE, AssignmentStatus.SUSPENDED),

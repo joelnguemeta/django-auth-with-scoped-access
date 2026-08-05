@@ -72,5 +72,5 @@ def test_lifecycle_apis_invalidate_within_request(world):
         assert engine.user_permissions(user) == {"things.view_thing", "things.change_thing"}
 
         assignment = ScopeAssignment.objects.filter(user=user).first()
-        assignment.revoke(reason="test")
+        assignment.revoke(by=world["admin"], reason="test")
         assert engine.user_permissions(user) == set()

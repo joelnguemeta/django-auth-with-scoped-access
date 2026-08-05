@@ -12,7 +12,11 @@ from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 
 from scoped_access import RoleService, signals
-from scoped_access.exceptions import AssignmentDeletionError, InvalidAssignmentTransitionError
+from scoped_access.exceptions import (
+    AssignmentDeletionError,
+    AssignmentManagementPermissionError,
+    InvalidAssignmentTransitionError,
+)
 from scoped_access.models import AssignmentStatus, ScopeAssignment
 from tests.testapp.models import Node
 
@@ -93,6 +97,62 @@ def test_valid_lifecycle_transitions(world):
     assert assignment.status == AssignmentStatus.REVOKED
     assert assignment.revoked_by == world["admin"]
     assert assignment.reason == "offboarding"
+
+
+@pytest.mark.parametrize("operation", ["suspend", "reactivate", "revoke"])
+def test_lifecycle_transitions_require_an_authorized_actor(world, operation):
+    assignment = ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=world["role"],
+        by=world["admin"],
+        level="ORGANIZATION",
+        scope=world["org"],
+    )
+    if operation == "reactivate":
+        assignment.suspend(by=world["admin"])
+        expected_status = AssignmentStatus.SUSPENDED
+    else:
+        expected_status = AssignmentStatus.ACTIVE
+
+    with pytest.raises(AssignmentManagementPermissionError):
+        getattr(assignment, operation)(by=world["user"])
+    with pytest.raises(AssignmentManagementPermissionError):
+        getattr(assignment, operation)()
+
+    assignment.refresh_from_db()
+    assert assignment.status == expected_status
+
+
+def test_lifecycle_authorization_uses_the_persisted_scope(world):
+    other_org = Node.objects.create(slug="org-b", level="ORGANIZATION")
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access",
+        codename="manage_assignments",
+    )
+    manager_role = RoleService.create(by=world["admin"], name="org-b assignment manager")
+    manager_role.grant_permissions(manage_assignments, by=world["admin"])
+    ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=manager_role,
+        by=world["admin"],
+        level="ORGANIZATION",
+        scope=other_org,
+    )
+    assignment = ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=world["role"],
+        by=world["admin"],
+        level="ORGANIZATION",
+        scope=world["org"],
+    )
+
+    assignment.scope = other_org
+    with pytest.raises(AssignmentManagementPermissionError):
+        assignment.revoke(by=world["user"])
+
+    assignment.refresh_from_db()
+    assert assignment.scope == world["org"]
+    assert assignment.status == AssignmentStatus.ACTIVE
 
 
 @pytest.mark.parametrize("operation", ["suspend", "reactivate", "revoke"])

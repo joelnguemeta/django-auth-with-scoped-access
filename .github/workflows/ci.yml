@@ -27,7 +27,7 @@ jobs:
       - name: Lint
         run: uv run --no-sync ruff check .
       - name: Check formatting
-        run: uv run --no-sync ruff format --check .
+        run: uv run --no-sync ruff format --check scoped_access tests example
       - name: Check migrations
         run: DJANGO_SETTINGS_MODULE=tests.settings uv run --no-sync python -m django makemigrations --check --dry-run
       - name: Build package

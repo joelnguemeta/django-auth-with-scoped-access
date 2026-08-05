@@ -273,6 +273,29 @@ class AssignmentStatus(models.TextChoices):
     REVOKED = "REVOKED"  # terminal
 
 
+_IMMUTABLE_ASSIGNMENT_FIELDS = frozenset(
+    {
+        "user",
+        "user_id",
+        "role",
+        "role_id",
+        "level",
+        "scope_ct",
+        "scope_ct_id",
+        "scope_id",
+        "valid_from",
+        "valid_until",
+        "granted_by",
+        "granted_by_id",
+        "granted_at",
+        "revoked_by",
+        "revoked_by_id",
+        "revoked_at",
+        "reason",
+    }
+)
+
+
 class ScopeAssignmentQuerySet(models.QuerySet):
     def effective(self, at=None):
         """SPEC §8.2 — evaluated at read time, never by a scheduled job."""
@@ -284,12 +307,16 @@ class ScopeAssignmentQuerySet(models.QuerySet):
 
     def grant(self, *, user, role, by, level=None, scope=None, **kwargs):
         """Create an assignment and emit assignment_granted (§9)."""
+        unsupported = set(kwargs) - {"valid_from", "valid_until"}
+        if unsupported:
+            raise TypeError(f"Unsupported assignment fields: {', '.join(sorted(unsupported))}.")
+
+        from .conf import get_config
+
+        cfg = get_config()
         if scope is not None:
             kwargs["scope_ct"] = ContentType.objects.get_for_model(type(scope))
             kwargs["scope_id"] = str(scope.pk)
-            from .conf import get_config
-
-            cfg = get_config()
             matching_levels = [
                 candidate
                 for candidate in cfg.hierarchy.levels_for_model(type(scope))
@@ -303,6 +330,18 @@ class ScopeAssignmentQuerySet(models.QuerySet):
                 level = matching_levels[0].name
             elif level not in {candidate.name for candidate in matching_levels}:
                 raise AssignmentScopeError("The assignment level does not match the scope node.")
+        elif level is not None:
+            try:
+                is_root = cfg.hierarchy.is_root(level)
+            except KeyError:
+                is_root = False
+            if not is_root:
+                raise AssignmentScopeError("An assignment without a scope must use a configured root level or None.")
+
+        valid_from = kwargs.get("valid_from")
+        valid_until = kwargs.get("valid_until")
+        if valid_from is not None and valid_until is not None and valid_until <= valid_from:
+            raise ValueError("valid_until must be later than valid_from.")
         from . import engine
 
         if not engine.role_assignable(role, level, scope):
@@ -337,8 +376,7 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             raise InvalidAssignmentTransitionError(
                 "Assignment status must be changed through suspend(), reactivate(), or revoke()."
             )
-        immutable = {"user", "user_id", "role", "role_id", "level", "scope_ct", "scope_ct_id", "scope_id"}
-        if immutable.intersection(kwargs):
+        if _IMMUTABLE_ASSIGNMENT_FIELDS.intersection(kwargs):
             raise DirectAssignmentMutationError("Assignment identity and scope are immutable after creation.")
         return super().update(**kwargs)
 
@@ -392,20 +430,25 @@ class AbstractScopeAssignment(models.Model):
     # ── Lifecycle (SPEC §8.1) — always through these, never hard-delete ──
 
     def save(self, *args, **kwargs):
-        """Reject direct status changes that bypass lifecycle methods."""
+        """Reject direct changes to assignment identity, validity and audit data."""
         from .mutations import assignment_mutation_is_managed
 
         if self._state.adding and not assignment_mutation_is_managed():
             raise DirectAssignmentMutationError("Use ScopeAssignment.objects.grant(..., by=actor).")
         update_fields = kwargs.get("update_fields")
-        writes_status = update_fields is None or "status" in update_fields
-        if self.pk is not None and writes_status:
-            persisted_status = (
-                type(self)._base_manager.filter(pk=self.pk).values_list("status", flat=True).first()
-            )
-            if persisted_status is not None and persisted_status != self.status:
+        if self.pk is not None:
+            if update_fields is None:
+                raise DirectAssignmentMutationError(
+                    "Persisted assignments require an explicit, non-security-sensitive update_fields list."
+                )
+            update_fields = set(update_fields)
+            if "status" in update_fields:
                 raise InvalidAssignmentTransitionError(
                     "Assignment status must be changed through suspend(), reactivate(), or revoke()."
+                )
+            if _IMMUTABLE_ASSIGNMENT_FIELDS.intersection(update_fields):
+                raise DirectAssignmentMutationError(
+                    "Assignment identity, validity and audit fields are immutable after creation."
                 )
         return super().save(*args, **kwargs)
 

@@ -10,18 +10,24 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
+from django.utils import timezone
 
 from scoped_access import RoleService, signals
 from scoped_access.exceptions import (
     AssignmentDeletionError,
     AssignmentManagementPermissionError,
+    AssignmentScopeError,
+    DirectAssignmentMutationError,
     InvalidAssignmentTransitionError,
 )
 from scoped_access.models import AssignmentStatus, ScopeAssignment
 from tests.testapp.models import Node
 
 SCOPED_ACCESS_ORG = {
-    "HIERARCHY": [{"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}],
+    "HIERARCHY": [
+        {"level": "ROOT"},
+        {"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}},
+    ],
 }
 
 
@@ -178,6 +184,52 @@ def test_direct_status_changes_are_rejected(world):
 
     assignment.refresh_from_db()
     assert assignment.status == AssignmentStatus.ACTIVE
+
+
+@pytest.mark.parametrize("field", ["status", "granted_by", "revoked_by", "reason", "scope_id"])
+def test_grant_rejects_forged_lifecycle_and_audit_fields(world, field):
+    with pytest.raises(TypeError, match="Unsupported assignment fields"):
+        ScopeAssignment.objects.grant(
+            user=world["user"],
+            role=world["role"],
+            by=world["admin"],
+            **{field: "forged"},
+        )
+
+
+def test_grant_rejects_non_root_level_without_scope(world):
+    with pytest.raises(AssignmentScopeError):
+        ScopeAssignment.objects.grant(
+            user=world["user"],
+            role=world["role"],
+            by=world["admin"],
+            level="ORGANIZATION",
+        )
+
+
+def test_grant_rejects_inverted_validity_window(world):
+    valid_from = timezone.now()
+    with pytest.raises(ValueError, match="valid_until must be later"):
+        ScopeAssignment.objects.grant(
+            user=world["user"],
+            role=world["role"],
+            by=world["admin"],
+            valid_from=valid_from,
+            valid_until=valid_from,
+        )
+
+
+def test_direct_validity_and_audit_mutations_are_rejected(world):
+    assignment = ScopeAssignment.objects.grant(user=world["user"], role=world["role"], by=world["admin"])
+
+    with pytest.raises(DirectAssignmentMutationError):
+        ScopeAssignment.objects.filter(pk=assignment.pk).update(valid_until=timezone.now())
+
+    assignment.reason = "forged"
+    with pytest.raises(DirectAssignmentMutationError):
+        assignment.save(update_fields=["reason"])
+    with pytest.raises(DirectAssignmentMutationError):
+        assignment.save()
 
 
 def test_assignment_hard_delete_is_rejected(world):

@@ -11,9 +11,9 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 
-from scoped_access import signals
+from scoped_access import RoleService, signals
 from scoped_access.exceptions import AssignmentDeletionError, InvalidAssignmentTransitionError
-from scoped_access.models import AssignmentStatus, Role, ScopeAssignment
+from scoped_access.models import AssignmentStatus, ScopeAssignment
 from tests.testapp.models import Node
 
 SCOPED_ACCESS_ORG = {
@@ -24,10 +24,12 @@ SCOPED_ACCESS_ORG = {
 @pytest.fixture
 def world(settings, db):
     settings.SCOPED_ACCESS = SCOPED_ACCESS_ORG
+    user = get_user_model().objects.create(username="amy")
+    admin = get_user_model().objects.create(username="boss", is_superuser=True)
     return {
-        "user": get_user_model().objects.create(username="amy"),
-        "admin": get_user_model().objects.create(username="boss", is_superuser=True),
-        "role": Role.objects.create(name="member"),
+        "user": user,
+        "admin": admin,
+        "role": RoleService.create(by=admin, name="member"),
         "org": Node.objects.create(slug="org-a", level="ORGANIZATION"),
     }
 

@@ -19,7 +19,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from helpdesk.models import Organization, Team, Ticket
 
-from scoped_access.models import Role, ScopeAssignment
+from scoped_access import RoleService
+from scoped_access.models import ScopeAssignment
 
 User = get_user_model()
 
@@ -62,15 +63,15 @@ delete_ticket = Permission.objects.get(codename="delete_ticket")
 # Roles
 # ---------------------------------------------------------------------------
 # System role — owner=None means system-wide
-viewer = Role.objects.create(name="viewer")
+viewer = RoleService.create(by=superadmin, name="viewer")
 viewer.grant_permissions(view_ticket, by=superadmin)
 
 # System role with full CRUD
-agent = Role.objects.create(name="agent")
+agent = RoleService.create(by=superadmin, name="agent")
 agent.grant_permissions(view_ticket, add_ticket, change_ticket, delete_ticket, by=superadmin)
 
 # Custom role owned by Org A — visible only inside Acme Corp
-triage = Role.objects.create(name="triage-agent", owner=org_a)
+triage = RoleService.create(by=superadmin, name="triage-agent", owner=org_a)
 triage.grant_permissions(view_ticket, add_ticket, by=superadmin)
 
 # ---------------------------------------------------------------------------

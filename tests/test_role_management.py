@@ -8,12 +8,14 @@ from django.contrib.contenttypes.models import ContentType
 from scoped_access import RoleService
 from scoped_access.exceptions import (
     AssignmentManagementPermissionError,
+    DirectAssignmentMutationError,
+    DirectRoleMutationError,
     DirectRolePermissionMutationError,
     RoleAssignmentError,
     RoleManagementPermissionError,
     RoleOwnershipError,
 )
-from scoped_access.models import Role, ScopeAssignment
+from scoped_access.models import Role, RolePermission, ScopeAssignment
 from tests.testapp.models import Node
 
 SCOPED_ACCESS_ORG = {
@@ -43,7 +45,7 @@ def role_world(settings, db):
     view = Permission.objects.create(content_type=ct, codename="view_thing", name="Can view thing")
     delete = Permission.objects.create(content_type=ct, codename="delete_thing", name="Can delete thing")
 
-    manager_role = Role.objects.create(name="organization role manager")
+    manager_role = RoleService.create(by=bootstrap, name="organization role manager")
     manager_role.grant_permissions(manage_roles, manage_assignments, view, by=bootstrap)
     ScopeAssignment.objects.grant(user=manager, role=manager_role, scope=org_a, by=bootstrap)
 
@@ -119,7 +121,7 @@ def test_custom_role_assignment_is_limited_to_owner_subtree(role_world):
 
 
 def test_assignment_grant_requires_manage_assignments_at_target_scope(role_world):
-    role = Role.objects.create(name="system-member")
+    role = RoleService.create(by=role_world["bootstrap"], name="system-member")
 
     assignment = ScopeAssignment.objects.grant(
         user=role_world["outsider"], role=role, scope=role_world["org_a"], by=role_world["manager"]
@@ -138,4 +140,32 @@ def test_role_owner_level_must_be_allowed(role_world, settings):
     settings.SCOPED_ACCESS = {**SCOPED_ACCESS_ORG, "ROLE_OWNER_LEVELS": []}
 
     with pytest.raises(RoleOwnershipError):
-        Role.objects.create(name="invalid", owner=role_world["org_a"])
+        RoleService.create(by=role_world["bootstrap"], name="invalid", owner=role_world["org_a"])
+
+
+def test_direct_security_sensitive_orm_mutations_are_rejected(role_world):
+    with pytest.raises(DirectRoleMutationError):
+        Role.objects.create(name="bypass")
+
+    role = RoleService.create(by=role_world["bootstrap"], name="managed")
+    role.name = "bypass"
+    with pytest.raises(DirectRoleMutationError):
+        role.save()
+    with pytest.raises(DirectRoleMutationError):
+        Role.objects.filter(pk=role.pk).update(name="bypass")
+    with pytest.raises(DirectRoleMutationError):
+        RolePermission.objects.create(role=role, permission=role_world["view"])
+
+    with pytest.raises(DirectAssignmentMutationError):
+        ScopeAssignment.objects.create(
+            user=role_world["outsider"],
+            role=role,
+            level="ORGANIZATION",
+            scope_id=str(role_world["org_a"].pk),
+        )
+
+    assignment = ScopeAssignment.objects.grant(
+        user=role_world["outsider"], role=role, scope=role_world["org_a"], by=role_world["bootstrap"]
+    )
+    with pytest.raises(DirectAssignmentMutationError):
+        ScopeAssignment.objects.filter(pk=assignment.pk).update(scope_id=str(role_world["org_b"].pk))

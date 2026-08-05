@@ -17,8 +17,9 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
 
-from scoped_access import engine
+from scoped_access import RoleService, engine
 from scoped_access.models import Role, ScopeAssignment
+from scoped_access.mutations import managed_assignment_mutation
 from scoped_access.reauth import ReAuthService
 from scoped_access.registry import resources
 from tests.testapp.models import GlobalThing, Node, Resource
@@ -59,13 +60,11 @@ class Fixture:
             )
 
         for spec in case["roles"]:
-            role = Role.objects.create(name=spec["id"])
+            fields = {"name": spec["id"]}
             if spec.get("owner"):
                 owner = self.nodes[spec["owner"]]
-                role.owner_ct = ContentType.objects.get_for_model(Node)
-                role.owner_id = str(owner.pk)
-                role.owner_level = owner.level
-                role.save()
+                fields.update(owner=owner, owner_level=owner.level)
+            role = RoleService.create(by=fixture_admin, **fields)
             for label in spec["permissions"]:
                 role.grant_permissions(_perm(label), by=fixture_admin)
             self.roles[spec["id"]] = role
@@ -82,16 +81,17 @@ class Fixture:
             self.users[spec["id"]] = user
             for a in spec["assignments"]:
                 node = self.nodes[a["node"]] if a.get("node") else None
-                ScopeAssignment.objects.create(
-                    user=user,
-                    role=self.roles[a["role"]],
-                    level=a.get("level"),
-                    scope_ct=ContentType.objects.get_for_model(Node) if node else None,
-                    scope_id=str(node.pk) if node else None,
-                    status=a["status"],
-                    valid_from=_dt(a.get("valid_from")),
-                    valid_until=_dt(a.get("valid_until")),
-                )
+                with managed_assignment_mutation():
+                    ScopeAssignment.objects.create(
+                        user=user,
+                        role=self.roles[a["role"]],
+                        level=a.get("level"),
+                        scope_ct=ContentType.objects.get_for_model(Node) if node else None,
+                        scope_id=str(node.pk) if node else None,
+                        status=a["status"],
+                        valid_from=_dt(a.get("valid_from")),
+                        valid_until=_dt(a.get("valid_until")),
+                    )
 
         for spec in case["resources"]:
             if spec.get("anchor"):

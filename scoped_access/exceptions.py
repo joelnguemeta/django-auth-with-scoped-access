@@ -32,3 +32,11 @@ class AssignmentScopeError(ValueError):
 
 class AssignmentManagementPermissionError(PermissionError):
     """Raised when an actor cannot manage assignments at the target scope."""
+
+
+class DirectRoleMutationError(RuntimeError):
+    """Raised when role persistence bypasses RoleService."""
+
+
+class DirectAssignmentMutationError(RuntimeError):
+    """Raised when assignment creation bypasses the actor-aware grant API."""

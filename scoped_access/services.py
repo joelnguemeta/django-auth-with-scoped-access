@@ -7,6 +7,7 @@ from django.db import transaction
 from . import engine
 from .conf import get_role_model
 from .exceptions import RoleManagementPermissionError
+from .mutations import managed_role_mutation
 
 
 class RoleService:
@@ -19,7 +20,8 @@ class RoleService:
         role._validate_owner()
         if not engine.can_manage_role(by, role):
             raise RoleManagementPermissionError("The actor cannot create this role.")
-        role.save()
+        with managed_role_mutation():
+            role.save()
         if permissions:
             role.grant_permissions(*permissions, by=by)
         return role
@@ -44,7 +46,8 @@ class RoleService:
             role._validate_owner()
             if not engine.can_manage_role(by, role):
                 raise RoleManagementPermissionError("The actor cannot move this role to the target owner.")
-            role.save()
+            with managed_role_mutation():
+                role.save()
         except Exception:
             for field, value in original.items():
                 setattr(role, field, value)
@@ -64,4 +67,5 @@ class RoleService:
     def delete(role, *, by) -> None:
         if not engine.can_manage_role(by, role):
             raise RoleManagementPermissionError("The actor cannot delete this role.")
-        role.delete()
+        with managed_role_mutation():
+            role.delete()

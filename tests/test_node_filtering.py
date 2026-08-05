@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth import get_user_model
 
-from scoped_access import engine
-from scoped_access.models import Role, ScopeAssignment
+from scoped_access import RoleService, engine
+from scoped_access.models import ScopeAssignment
 from tests.testapp.models import GlobalThing, Node
 
 SCOPED_ACCESS_TREE = {
@@ -30,7 +30,6 @@ def node_world(settings, db):
     south_hospital = Node.objects.create(slug="south-hospital", level="FACILITY", parent=south)
     Node.objects.create(slug="not-a-hierarchy-node", level="OTHER")
 
-    role = Role.objects.create(name="member")
     region_user = get_user_model().objects.create(username="region-user")
     facility_user = get_user_model().objects.create(username="facility-user")
     superuser = get_user_model().objects.create(username="root", is_superuser=True)
@@ -38,6 +37,7 @@ def node_world(settings, db):
     inactive_superuser = get_user_model().objects.create(
         username="inactive-root", is_active=False, is_superuser=True
     )
+    role = RoleService.create(by=superuser, name="member")
     ScopeAssignment.objects.grant(user=region_user, role=role, scope=north, by=superuser)
     ScopeAssignment.objects.grant(user=facility_user, role=role, scope=north_hospital, by=superuser)
     ScopeAssignment.objects.grant(user=inactive_user, role=role, scope=north, by=superuser)

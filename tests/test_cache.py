@@ -12,9 +12,9 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
-from scoped_access import engine
+from scoped_access import RoleService, engine
 from scoped_access.cache import request_cache
-from scoped_access.models import Role, ScopeAssignment
+from scoped_access.models import ScopeAssignment
 from tests.testapp.models import Node
 
 SCOPED_ACCESS_ORG = {
@@ -28,8 +28,8 @@ def world(settings, db):
     ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
     view = Permission.objects.create(content_type=ct, codename="view_thing", name="v")
     change = Permission.objects.create(content_type=ct, codename="change_thing", name="c")
-    role = Role.objects.create(name="member")
     admin = get_user_model().objects.create(username="boss", is_superuser=True)
+    role = RoleService.create(by=admin, name="member")
     role.grant_permissions(view, by=admin)
     user = get_user_model().objects.create(username="amy")
     org = Node.objects.create(slug="org-a", level="ORGANIZATION")

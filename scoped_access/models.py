@@ -31,6 +31,8 @@ from .exceptions import (
     AssignmentDeletionError,
     AssignmentManagementPermissionError,
     AssignmentScopeError,
+    DirectAssignmentMutationError,
+    DirectRoleMutationError,
     InvalidAssignmentTransitionError,
     RoleAssignmentError,
     RoleManagementPermissionError,
@@ -38,6 +40,36 @@ from .exceptions import (
 )
 
 ensure_swappable_defaults()
+
+
+class RoleQuerySet(models.QuerySet):
+    def create(self, **kwargs):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService.create(..., by=actor).")
+        return super().create(**kwargs)
+
+    def bulk_create(self, objs, **kwargs):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Bulk role creation must run through an explicit trusted import.")
+        return super().bulk_create(objs, **kwargs)
+
+    def update(self, **kwargs):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService.update(..., by=actor).")
+        return super().update(**kwargs)
+
+    def delete(self):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService.delete(..., by=actor).")
+        return super().delete()
 
 
 class AbstractRole(models.Model):
@@ -63,6 +95,8 @@ class AbstractRole(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = RoleQuerySet.as_manager()
 
     class Meta:
         abstract = True
@@ -106,8 +140,19 @@ class AbstractRole(models.Model):
             raise RoleOwnershipError(f"Level '{self.owner_level}' is not allowed to own roles.")
 
     def save(self, *args, **kwargs):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService to create or edit roles.")
         self._validate_owner()
         return super().save(*args, **kwargs)
+
+    def delete(self, using=None, keep_parents=False):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Use RoleService.delete(..., by=actor).")
+        return super().delete(using=using, keep_parents=keep_parents)
 
     # ── Permission set changes (SPEC R6) — always through these ──────────
     # Changing a role's permissions silently changes the rights of every
@@ -175,13 +220,51 @@ class Role(AbstractRole):
         ]
 
 
+class RolePermissionQuerySet(models.QuerySet):
+    def _assert_managed(self):
+        from .role_permissions import role_permission_mutation_is_managed
+
+        if not role_permission_mutation_is_managed():
+            raise DirectRoleMutationError(
+                "Use role.grant_permissions(..., by=actor) or role.revoke_permissions(..., by=actor)."
+            )
+
+    def create(self, **kwargs):
+        self._assert_managed()
+        return super().create(**kwargs)
+
+    def bulk_create(self, objs, **kwargs):
+        self._assert_managed()
+        return super().bulk_create(objs, **kwargs)
+
+    def delete(self):
+        self._assert_managed()
+        return super().delete()
+
+
 class RolePermission(models.Model):
     role = models.ForeignKey(role_model_label(), on_delete=models.CASCADE, related_name="role_permissions")
     permission = models.ForeignKey("auth.Permission", on_delete=models.CASCADE, related_name="scoped_role_permissions")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = RolePermissionQuerySet.as_manager()
+
     class Meta:
         constraints = [models.UniqueConstraint(fields=["role", "permission"], name="scoped_access_unique_role_perm")]
+
+    def save(self, *args, **kwargs):
+        from .role_permissions import role_permission_mutation_is_managed
+
+        if not role_permission_mutation_is_managed():
+            raise DirectRoleMutationError("Use the actor-aware role permission methods.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, using=None, keep_parents=False):
+        from .role_permissions import role_permission_mutation_is_managed
+
+        if not role_permission_mutation_is_managed():
+            raise DirectRoleMutationError("Use the actor-aware role permission methods.")
+        return super().delete(using=using, keep_parents=keep_parents)
 
 
 class AssignmentStatus(models.TextChoices):
@@ -226,10 +309,27 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             raise RoleAssignmentError("A custom role can only be assigned inside its owner's subtree.")
         if not engine.can_manage_assignment(by, scope):
             raise AssignmentManagementPermissionError("The actor cannot manage assignments at the target scope.")
-        assignment = self.create(user=user, role=role, level=level, granted_by=by, **kwargs)
+        from .mutations import managed_assignment_mutation
+
+        with managed_assignment_mutation():
+            assignment = self.create(user=user, role=role, level=level, granted_by=by, **kwargs)
         signals.assignment_granted.send(sender=self.model, assignment=assignment, actor=by)
         cache.invalidate_user(user.pk)
         return assignment
+
+    def create(self, **kwargs):
+        from .mutations import assignment_mutation_is_managed
+
+        if not assignment_mutation_is_managed():
+            raise DirectAssignmentMutationError("Use ScopeAssignment.objects.grant(..., by=actor).")
+        return super().create(**kwargs)
+
+    def bulk_create(self, objs, **kwargs):
+        from .mutations import assignment_mutation_is_managed
+
+        if not assignment_mutation_is_managed():
+            raise DirectAssignmentMutationError("Bulk assignment creation requires an explicit trusted import.")
+        return super().bulk_create(objs, **kwargs)
 
     def update(self, **kwargs):
         """Prevent bulk updates from bypassing the lifecycle state machine."""
@@ -237,6 +337,9 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             raise InvalidAssignmentTransitionError(
                 "Assignment status must be changed through suspend(), reactivate(), or revoke()."
             )
+        immutable = {"user", "user_id", "role", "role_id", "level", "scope_ct", "scope_ct_id", "scope_id"}
+        if immutable.intersection(kwargs):
+            raise DirectAssignmentMutationError("Assignment identity and scope are immutable after creation.")
         return super().update(**kwargs)
 
     def delete(self):
@@ -290,6 +393,10 @@ class AbstractScopeAssignment(models.Model):
 
     def save(self, *args, **kwargs):
         """Reject direct status changes that bypass lifecycle methods."""
+        from .mutations import assignment_mutation_is_managed
+
+        if self._state.adding and not assignment_mutation_is_managed():
+            raise DirectAssignmentMutationError("Use ScopeAssignment.objects.grant(..., by=actor).")
         update_fields = kwargs.get("update_fields")
         writes_status = update_fields is None or "status" in update_fields
         if self.pk is not None and writes_status:

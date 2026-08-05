@@ -23,6 +23,10 @@ def managed_role_permission_mutation():
         _managed_mutation.reset(token)
 
 
+def role_permission_mutation_is_managed() -> bool:
+    return _managed_mutation.get()
+
+
 @receiver(m2m_changed, sender="scoped_access.RolePermission")
 def reject_direct_role_permission_mutation(sender, action, **kwargs):
     """Reject add/remove/set/clear calls that have no attributable actor."""

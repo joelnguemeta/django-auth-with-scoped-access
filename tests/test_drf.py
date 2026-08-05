@@ -15,6 +15,7 @@ from rest_framework import serializers, viewsets
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework.views import APIView
 
+from scoped_access import RoleService
 from scoped_access.drf import (
     MeAccessView,
     ReAuthView,
@@ -23,7 +24,7 @@ from scoped_access.drf import (
     ScopeQuerySetMixin,
     ScopeWriteGuardMixin,
 )
-from scoped_access.models import Role, ScopeAssignment
+from scoped_access.models import ScopeAssignment
 from scoped_access.registry import resources
 from tests.testapp.models import Node, Resource
 
@@ -95,19 +96,18 @@ def org_world(settings, db):
 
     ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
     perm, _ = Permission.objects.get_or_create(content_type=ct, codename="view_thing", defaults={"name": "v"})
-    role = Role.objects.create(name="member")
     fixture_admin = get_user_model().objects.create(username="boss", is_superuser=True)
+    role = RoleService.create(by=fixture_admin, name="member")
     role.grant_permissions(perm, by=fixture_admin)
 
     user = get_user_model().objects.create(username="amy")
     user.set_password("s3cret")
     user.save()
-    ScopeAssignment.objects.create(
+    ScopeAssignment.objects.grant(
         user=user,
         role=role,
-        level="ORGANIZATION",
-        scope_ct=ContentType.objects.get_for_model(Node),
-        scope_id=str(org_a.pk),
+        scope=org_a,
+        by=fixture_admin,
     )
     return {"user": user, "org_a": org_a, "res_a": res_a, "res_b": res_b}
 

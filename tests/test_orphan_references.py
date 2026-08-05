@@ -6,7 +6,8 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 
 from scoped_access import RoleService, engine
-from scoped_access.models import Role, ScopeAssignment
+from scoped_access.models import ScopeAssignment
+from scoped_access.mutations import managed_assignment_mutation
 from tests.testapp.models import GlobalThing, Node
 
 SCOPED_ACCESS_ORG = {
@@ -29,7 +30,7 @@ def orphan_world(settings, db):
 
     ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
     view = Permission.objects.create(content_type=ct, codename="view_thing", name="Can view thing")
-    system_role = Role.objects.create(name="viewer")
+    system_role = RoleService.create(by=bootstrap, name="viewer")
     system_role.grant_permissions(view, by=bootstrap)
     assignment = ScopeAssignment.objects.grant(user=user, role=system_role, scope=owner, by=bootstrap)
     custom_role = RoleService.create(by=bootstrap, name="custom", owner=owner)
@@ -76,11 +77,13 @@ def test_orphan_role_owner_denies_visibility_and_management(orphan_world):
 
 
 def test_malformed_assignment_without_content_type_fails_closed(orphan_world):
-    malformed = ScopeAssignment.objects.create(
-        user=orphan_world["bootstrap"],
-        role=Role.objects.create(name="malformed-role"),
-        level="ORGANIZATION",
-        scope_id="missing",
-    )
+    role = RoleService.create(by=orphan_world["bootstrap"], name="malformed-role")
+    with managed_assignment_mutation():
+        malformed = ScopeAssignment.objects.create(
+            user=orphan_world["bootstrap"],
+            role=role,
+            level="ORGANIZATION",
+            scope_id="missing",
+        )
 
     assert not engine.covers(malformed, orphan_world["global_thing"])

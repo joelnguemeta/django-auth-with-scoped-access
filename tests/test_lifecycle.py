@@ -58,6 +58,22 @@ def test_duplicate_live_assignment_rejected_but_regrant_after_revoke_ok(world):
     assert ScopeAssignment.objects.count() == 2  # history preserved, no hard delete
 
 
+@pytest.mark.parametrize("level", [None, "ROOT"], ids=["flat-rbac", "explicit-root"])
+def test_duplicate_live_global_assignment_rejected_but_regrant_after_revoke_ok(world, level):
+    grant = lambda: ScopeAssignment.objects.grant(  # noqa: E731
+        user=world["user"], role=world["role"], level=level
+    )
+    first = grant()
+
+    with pytest.raises(IntegrityError), transaction.atomic():  # SPEC §8.3
+        grant()
+
+    first.revoke(by=world["admin"], reason="rotation")
+    regrant = grant()
+    assert regrant.status == AssignmentStatus.ACTIVE
+    assert ScopeAssignment.objects.count() == 2
+
+
 def test_lifecycle_events_emitted_with_actor(world):
     granted = Recorder(signals.assignment_granted)
     revoked = Recorder(signals.assignment_revoked)

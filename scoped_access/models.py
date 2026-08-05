@@ -227,11 +227,32 @@ class ScopeAssignment(AbstractScopeAssignment):
         swappable = ASSIGNMENT_MODEL_SETTING
         constraints = [
             # SPEC §8.3 — no duplicate among non-revoked assignments.
+            #
+            # The full tuple constraint cannot protect root assignments on
+            # databases where NULL values are distinct. Dedicated partial
+            # constraints cover both valid node-less shapes: an explicit
+            # root level and flat RBAC (level=None).
             models.UniqueConstraint(
                 fields=["user", "role", "level", "scope_ct", "scope_id"],
                 condition=~models.Q(status=AssignmentStatus.REVOKED),
                 name="scoped_access_unique_live_assignment",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["user", "role", "level"],
+                condition=(
+                    ~models.Q(status=AssignmentStatus.REVOKED)
+                    & models.Q(level__isnull=False, scope_id__isnull=True)
+                ),
+                name="scoped_access_unique_live_root",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "role"],
+                condition=(
+                    ~models.Q(status=AssignmentStatus.REVOKED)
+                    & models.Q(level__isnull=True, scope_id__isnull=True)
+                ),
+                name="scoped_access_unique_live_flat",
+            ),
         ]
         indexes = [
             models.Index(fields=["user", "status"], name="scoped_assign_user_status_idx"),

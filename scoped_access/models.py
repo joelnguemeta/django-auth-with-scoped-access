@@ -30,6 +30,9 @@ from .conf import (
 from .exceptions import (
     AssignmentDeletionError,
     InvalidAssignmentTransitionError,
+    RoleAssignmentError,
+    RoleManagementPermissionError,
+    RoleOwnershipError,
 )
 
 ensure_swappable_defaults()
@@ -69,6 +72,41 @@ class AbstractRole(models.Model):
     def __str__(self) -> str:
         return self.name if self.is_system else f"{self.name} @ {self.owner}"
 
+    def _validate_owner(self) -> None:
+        """Enforce that custom-role owners belong to an allowed hierarchy level."""
+        if self.owner_id is None:
+            if self.owner_ct_id is not None or self.owner_level is not None:
+                raise RoleOwnershipError("A system role cannot define owner metadata without an owner.")
+            return
+        if self.owner_ct_id is None:
+            raise RoleOwnershipError("A custom role requires both owner_ct and owner_id.")
+
+        owner = self.owner
+        if owner is None:
+            raise RoleOwnershipError("The custom role owner does not exist.")
+
+        from .conf import get_config
+
+        cfg = get_config()
+        matching_levels = [
+            level
+            for level in cfg.hierarchy.levels_for_model(type(owner))
+            if level.queryset().filter(pk=owner.pk).exists()
+        ]
+        if self.owner_level is None:
+            if len(matching_levels) != 1:
+                raise RoleOwnershipError("owner_level is required when the owner model maps to multiple levels.")
+            self.owner_level = matching_levels[0].name
+        elif self.owner_level not in {level.name for level in matching_levels}:
+            raise RoleOwnershipError("owner_level does not match the configured hierarchy node.")
+
+        if self.owner_level not in cfg.role_owner_levels:
+            raise RoleOwnershipError(f"Level '{self.owner_level}' is not allowed to own roles.")
+
+    def save(self, *args, **kwargs):
+        self._validate_owner()
+        return super().save(*args, **kwargs)
+
     # ── Permission set changes (SPEC R6) — always through these ──────────
     # Changing a role's permissions silently changes the rights of every
     # assignee: it MUST emit role_permissions_changed (§9), which plain
@@ -77,18 +115,35 @@ class AbstractRole(models.Model):
     def _labels(self, perms) -> list[str]:
         return sorted(f"{p.content_type.app_label}.{p.codename}" for p in perms)
 
-    def grant_permissions(self, *perms, by=None) -> None:
+    def grant_permissions(self, *perms, by) -> None:
+        from . import engine
+        from .role_permissions import managed_role_permission_mutation
+
+        if not engine.can_manage_role(by, self):
+            raise RoleManagementPermissionError("The actor cannot manage this role.")
         added = [p for p in perms if not self.permissions.filter(pk=p.pk).exists()]
-        self.permissions.add(*perms)
+        forbidden = [label for label in self._labels(added) if not engine.can_grant_permission(by, self, label)]
+        if forbidden:
+            raise RoleManagementPermissionError(
+                f"The actor cannot delegate these permissions: {', '.join(forbidden)}."
+            )
+        with managed_role_permission_mutation():
+            self.permissions.add(*perms)
         if added:
             signals.role_permissions_changed.send(
                 sender=type(self), role=self, added=self._labels(added), removed=[], actor=by
             )
             cache.invalidate_all()
 
-    def revoke_permissions(self, *perms, by=None) -> None:
+    def revoke_permissions(self, *perms, by) -> None:
+        from . import engine
+        from .role_permissions import managed_role_permission_mutation
+
+        if not engine.can_manage_role(by, self):
+            raise RoleManagementPermissionError("The actor cannot manage this role.")
         removed = [p for p in perms if self.permissions.filter(pk=p.pk).exists()]
-        self.permissions.remove(*perms)
+        with managed_role_permission_mutation():
+            self.permissions.remove(*perms)
         if removed:
             signals.role_permissions_changed.send(
                 sender=type(self), role=self, added=[], removed=self._labels(removed), actor=by
@@ -154,6 +209,10 @@ class ScopeAssignmentQuerySet(models.QuerySet):
                 lvls = cfg.hierarchy.levels_for_model(type(scope))
                 if lvls:
                     level = lvls[0].name
+        from . import engine
+
+        if not engine.role_assignable(role, level, scope):
+            raise RoleAssignmentError("A custom role can only be assigned inside its owner's subtree.")
         assignment = self.create(user=user, role=role, level=level, granted_by=by, **kwargs)
         signals.assignment_granted.send(sender=self.model, assignment=assignment, actor=by)
         cache.invalidate_user(user.pk)

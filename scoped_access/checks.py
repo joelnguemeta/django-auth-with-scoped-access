@@ -94,10 +94,10 @@ def check_scoped_access_config(app_configs, **kwargs):
             )
 
     grantable = raw.get("GRANTABLE_PERMISSIONS", "self")
-    if grantable not in ("self", "any") and not isinstance(grantable, (list, tuple, set)):
+    if grantable not in ("self", "any") and not isinstance(grantable, (list, tuple, set)) and not callable(grantable):
         errors.append(
             checks.Error(
-                "SCOPED_ACCESS: GRANTABLE_PERMISSIONS must be 'self', 'any' or an explicit list.",
+                "SCOPED_ACCESS: GRANTABLE_PERMISSIONS must be 'self', 'any', an explicit list or a callable.",
                 id="scoped_access.E005",
             )
         )

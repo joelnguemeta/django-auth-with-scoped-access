@@ -29,6 +29,9 @@ User = get_user_model()
 User.objects.filter(username__in=["alice", "bob", "carol", "superadmin"]).delete()
 Organization.objects.all().delete()
 
+superadmin_password = secrets.token_urlsafe(18)
+superadmin = User.objects.create_superuser("superadmin", password=superadmin_password)
+
 # ---------------------------------------------------------------------------
 # Hierarchy nodes
 # ---------------------------------------------------------------------------
@@ -60,15 +63,15 @@ delete_ticket = Permission.objects.get(codename="delete_ticket")
 # ---------------------------------------------------------------------------
 # System role — owner=None means system-wide
 viewer = Role.objects.create(name="viewer")
-viewer.grant_permissions(view_ticket)
+viewer.grant_permissions(view_ticket, by=superadmin)
 
 # System role with full CRUD
 agent = Role.objects.create(name="agent")
-agent.grant_permissions(view_ticket, add_ticket, change_ticket, delete_ticket)
+agent.grant_permissions(view_ticket, add_ticket, change_ticket, delete_ticket, by=superadmin)
 
 # Custom role owned by Org A — visible only inside Acme Corp
 triage = Role.objects.create(name="triage-agent", owner=org_a)
-triage.grant_permissions(view_ticket, add_ticket)
+triage.grant_permissions(view_ticket, add_ticket, by=superadmin)
 
 # ---------------------------------------------------------------------------
 # Users
@@ -96,6 +99,7 @@ print("Users (username / password):")
 print(f"  alice / {alice_password} — agent on all of Acme Corp (ORGANIZATION level)")
 print(f"  bob   / {bob_password} — agent on Frontend team only (TEAM level)")
 print(f"  carol / {carol_password} — viewer on both Acme Corp and Globex")
+print(f"  superadmin / {superadmin_password} — bootstrap superuser")
 print()
 print("Endpoints (run: python manage.py runserver):")
 print("  GET  /api/tickets/          — filtered by caller's scope")

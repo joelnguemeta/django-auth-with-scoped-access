@@ -8,3 +8,19 @@ class InvalidAssignmentTransitionError(ValueError):
 
 class AssignmentDeletionError(RuntimeError):
     """Raised when code tries to hard-delete assignment audit history."""
+
+
+class RoleManagementPermissionError(PermissionError):
+    """Raised when an actor cannot manage a role or delegated permission."""
+
+
+class RoleAssignmentError(ValueError):
+    """Raised when a custom role is assigned outside its owner's subtree."""
+
+
+class RoleOwnershipError(ValueError):
+    """Raised when a custom role has an invalid owner or owner level."""
+
+
+class DirectRolePermissionMutationError(RuntimeError):
+    """Raised when role permissions bypass the actor-aware role API."""

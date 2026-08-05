@@ -48,6 +48,8 @@ class Fixture:
         self.roles: dict[str, Role] = {}
         self.users: dict[str, object] = {}
         self.resources: dict[str, object] = {}
+        user_model = get_user_model()
+        fixture_admin = user_model.objects.create(username="__conformance_admin__", is_superuser=True)
 
         for spec in case["nodes"]:
             self.nodes[spec["id"]] = Node.objects.create(
@@ -65,10 +67,9 @@ class Fixture:
                 role.owner_level = owner.level
                 role.save()
             for label in spec["permissions"]:
-                role.permissions.add(_perm(label))
+                role.grant_permissions(_perm(label), by=fixture_admin)
             self.roles[spec["id"]] = role
 
-        user_model = get_user_model()
         for spec in case["principals"]:
             user = user_model.objects.create(
                 username=spec["id"],

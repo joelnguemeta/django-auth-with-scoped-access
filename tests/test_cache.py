@@ -29,11 +29,12 @@ def world(settings, db):
     view = Permission.objects.create(content_type=ct, codename="view_thing", name="v")
     change = Permission.objects.create(content_type=ct, codename="change_thing", name="c")
     role = Role.objects.create(name="member")
-    role.permissions.add(view)
+    admin = get_user_model().objects.create(username="boss", is_superuser=True)
+    role.grant_permissions(view, by=admin)
     user = get_user_model().objects.create(username="amy")
     org = Node.objects.create(slug="org-a", level="ORGANIZATION")
     ScopeAssignment.objects.grant(user=user, role=role, level="ORGANIZATION", scope=org, valid_from=timezone.now())
-    return {"user": user, "role": role, "org": org, "change": change}
+    return {"user": user, "admin": admin, "role": role, "org": org, "change": change}
 
 
 def test_memoizes_within_request(world, django_assert_num_queries):
@@ -65,7 +66,7 @@ def test_lifecycle_apis_invalidate_within_request(world):
     with request_cache():
         assert engine.user_permissions(user) == {"things.view_thing"}  # warm
 
-        role.grant_permissions(world["change"])
+        role.grant_permissions(world["change"], by=world["admin"])
         assert engine.user_permissions(user) == {"things.view_thing", "things.change_thing"}
 
         assignment = ScopeAssignment.objects.filter(user=user).first()

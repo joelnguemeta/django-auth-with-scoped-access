@@ -26,7 +26,7 @@ def world(settings, db):
     settings.SCOPED_ACCESS = SCOPED_ACCESS_ORG
     return {
         "user": get_user_model().objects.create(username="amy"),
-        "admin": get_user_model().objects.create(username="boss"),
+        "admin": get_user_model().objects.create(username="boss", is_superuser=True),
         "role": Role.objects.create(name="member"),
         "org": Node.objects.create(slug="org-a", level="ORGANIZATION"),
     }

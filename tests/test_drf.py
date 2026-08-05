@@ -85,7 +85,8 @@ def org_world(settings, db):
     ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
     perm, _ = Permission.objects.get_or_create(content_type=ct, codename="view_thing", defaults={"name": "v"})
     role = Role.objects.create(name="member")
-    role.permissions.add(perm)
+    fixture_admin = get_user_model().objects.create(username="boss", is_superuser=True)
+    role.grant_permissions(perm, by=fixture_admin)
 
     user = get_user_model().objects.create(username="amy")
     user.set_password("s3cret")

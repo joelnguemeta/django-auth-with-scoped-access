@@ -280,6 +280,8 @@ def visible_resources(user, model, at=None):
 
 def role_visible(user, role, at=None) -> bool:
     """R1 — system roles everywhere; custom roles inside a covering scope."""
+    if not user.is_active:
+        return False
     if role.owner_id is None or user.is_superuser:
         return True
     owner = role.owner
@@ -302,6 +304,8 @@ def role_assignable(role, level_name: str | None, node) -> bool:
 
 def can_grant_permission(actor, role, perm: str, at=None) -> bool:
     """R5 — anti-escalation: only delegate what you hold at the owner scope."""
+    if not actor.is_active:
+        return False
     if actor.is_superuser:
         return True
     policy = get_config().grantable_permissions
@@ -309,6 +313,8 @@ def can_grant_permission(actor, role, perm: str, at=None) -> bool:
         return True
     if isinstance(policy, (list, tuple, set)):
         return perm in policy
+    if callable(policy):
+        return bool(policy(actor=actor, role=role, permission=perm, at=at))
 
     # policy == "self"
     if role.owner_id is None:
@@ -318,3 +324,21 @@ def can_grant_permission(actor, role, perm: str, at=None) -> bool:
                 held |= _role_perms(a.role)
         return perm in held
     return perm in user_permissions(actor, role.owner, at)
+
+
+def can_manage_role(actor, role, at=None) -> bool:
+    """R4 — actor may manage this system or custom role."""
+    if actor is None or not actor.is_active:
+        return False
+    if actor.is_superuser:
+        return True
+
+    app_label = role._meta.app_label
+    if role.owner_id is not None:
+        return has_perm(actor, f"{app_label}.manage_roles", role.owner, at)
+
+    permission = f"{app_label}.manage_global_roles"
+    return any(
+        assignment.is_root_scope and permission in _role_perms(assignment.role)
+        for assignment in effective_assignments(actor, at)
+    )

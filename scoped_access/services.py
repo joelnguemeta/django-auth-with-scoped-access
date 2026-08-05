@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.db import transaction
 
-from . import engine
+from . import cache, engine
 from .conf import get_role_model
 from .exceptions import RoleManagementPermissionError
 from .mutations import managed_role_mutation
@@ -52,6 +52,7 @@ class RoleService:
             for field, value in original.items():
                 setattr(role, field, value)
             raise
+        cache.invalidate_all()
         return role
 
     @staticmethod

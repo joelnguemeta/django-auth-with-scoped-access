@@ -5,7 +5,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 
-from scoped_access import RoleService
+from scoped_access import RoleService, engine
+from scoped_access.cache import request_cache
 from scoped_access.exceptions import (
     AssignmentManagementPermissionError,
     DirectAssignmentMutationError,
@@ -118,6 +119,26 @@ def test_custom_role_assignment_is_limited_to_owner_subtree(role_world):
         )
     with pytest.raises(RoleAssignmentError):
         ScopeAssignment.objects.grant(user=role_world["outsider"], role=role, by=role_world["manager"])
+
+
+def test_existing_assignment_fails_closed_after_role_owner_moves(role_world):
+    role = RoleService.create(by=role_world["bootstrap"], name="triage", owner=role_world["org_a"])
+    role.grant_permissions(role_world["view"], by=role_world["bootstrap"])
+    assignment = ScopeAssignment.objects.grant(
+        user=role_world["outsider"],
+        role=role,
+        scope=role_world["org_a"],
+        by=role_world["manager"],
+    )
+    permission = "things.view_thing"
+    with request_cache():
+        assert engine.has_perm(role_world["outsider"], permission, role_world["org_a"])
+
+        RoleService.update(role, by=role_world["bootstrap"], owner=role_world["org_b"])
+
+        assert not engine.covers(assignment, role_world["org_a"])
+        assert not engine.has_perm(role_world["outsider"], permission, role_world["org_a"])
+    assert engine.access_summary(role_world["outsider"]) == {"permissions": [], "assignments": []}
 
 
 def test_assignment_grant_requires_manage_assignments_at_target_scope(role_world):

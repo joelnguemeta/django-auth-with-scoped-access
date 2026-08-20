@@ -14,9 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write  # Obligatoire pour le Trusted Publishing PyPI (OIDC)
-    environment:
-      name: pypi
-      url: https://pypi.org/p/django-scoped-access
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

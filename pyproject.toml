@@ -12,13 +12,40 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Joel Edmond Nguemeta" }]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+keywords = [
+    "django",
+    "authorization",
+    "rbac",
+    "abac",
+    "multi-tenancy",
+    "permissions",
+    "re-authentication",
+    "step-up-auth",
+    "security",
+    "hierarchical-roles",
 ]
 dependencies = ["Django>=4.2"]
+
+[project.urls]
+Homepage = "https://github.com/joelnguemeta/django-auth-with-scoped-access"
+Documentation = "https://django-scoped-access.readthedocs.io/"
+Repository = "https://github.com/joelnguemeta/django-auth-with-scoped-access"
+Issues = "https://github.com/joelnguemeta/django-auth-with-scoped-access/issues"
+Changelog = "https://github.com/joelnguemeta/django-auth-with-scoped-access/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 drf = ["djangorestframework>=3.14"]

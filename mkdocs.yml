@@ -1,9 +1,76 @@
 site_name: Django Scoped Access
+site_description: RBAC + Hierarchical ABAC + Step-up Re-Authentication for Django
+site_author: Joel Edmond Nguemeta
+site_url: https://django-scoped-access.readthedocs.io/
+repo_url: https://github.com/joelnguemeta/django-auth-with-scoped-access
+repo_name: joelnguemeta/django-auth-with-scoped-access
+
 theme:
   name: material
+  language: en
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
   palette:
-    primary: indigo
-    accent: deep purple
+    - scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
 nav:
-  - Accueil: index.md
-  - Spécifications (SPEC): spec.md
+  - Getting Started:
+      - Overview: index.md
+      - Quickstart: quickstart.md
+  - Architecture & Concepts:
+      - Core Concepts: concepts.md
+      - Configuration Reference: configuration.md
+      - Lifecycle & Assignments: lifecycle.md
+  - Integrations:
+      - Django REST Framework (DRF): drf.md
+      - Django Backend & Admin: django-and-admin.md
+      - Step-Up Re-Authentication: reauth.md
+      - Swappable Models: swappable-models.md
+  - Security & Best Practices:
+      - Security Guide & Threat Model: security.md
+  - Specification:
+      - Formal Specification (SPEC): spec.md

@@ -130,7 +130,44 @@ def test_e010_reauth_ttl_must_be_a_positive_integer(ttl):
     )
 
 
-def test_valid_reauth_config_passes():
+def test_valid_reauth_config_passes(settings):
+    settings.CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": "redis://redis:6379/1",
+        }
+    }
+
+    assert (
+        _error_ids(
+            HIERARCHY=VALID_HIERARCHY,
+            REAUTH={"ENABLED": True, "TTL": 60},
+        )
+        == set()
+    )
+
+
+def test_enabled_reauth_warns_on_process_local_cache(settings):
+    settings.CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
+    }
+
+    assert "scoped_access.W001" in _error_ids(
+        HIERARCHY=VALID_HIERARCHY,
+        REAUTH={"ENABLED": True, "TTL": 60},
+    )
+
+
+def test_enabled_reauth_accepts_shared_cache(settings):
+    settings.CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": "redis://redis:6379/1",
+        }
+    }
+
     assert (
         _error_ids(
             HIERARCHY=VALID_HIERARCHY,

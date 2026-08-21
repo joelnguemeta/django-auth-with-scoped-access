@@ -153,7 +153,7 @@ Normative rules:
 Optional module. When enabled:
 
 1. **Issuance:** the principal presents a fresh proof to a **verifier** (v1: password; future: PIN, TOTP, WebAuthn). On success the implementation issues an opaque random token bound to the principal, stored server-side with TTL `reauth.ttl_seconds` (default 300). Naming an **unknown verifier** MUST fail issuance exactly like a bad proof (no token, no server error) — verifier names are not an enumeration oracle.
-2. **Consumption:** a protected action MUST receive the token (HTTP: header `X-ReAuth-Token`). Verification MUST be atomic check-and-delete (**single use**), MUST match the requesting principal, and MUST fail on expiry.
+2. **Consumption:** a protected action MUST receive the token (HTTP: header `X-ReAuth-Token`). Verification MUST enforce single use, MUST match the requesting principal, and MUST fail on expiry. Production backends SHOULD implement consumption as atomic check-and-delete.
 3. **Failure contract (HTTP):** status 403 with a machine-readable body containing at least `{"reauth_required": true}` so clients can trigger the flow.
 4. **Invalidation:** all outstanding tokens of a principal MUST be invalidated on credential change and SHOULD be invalidatable in bulk (per-principal index).
 5. **Superusers are NOT exempt** from re-authentication.
@@ -236,6 +236,7 @@ REST implementations MUST expose the principal's effective access:
 ## 11. Caching & revocation guarantees
 
 - A revocation/suspension MUST take effect on the next request at the latest. Therefore assignment/permission data MUST NOT be cached across requests unless the cache is invalidated by the events of §9.
+- ReAuth token storage MUST be shared by all application workers/pods when ReAuth is enabled. Process-local cache backends such as `LocMemCache` and non-persistent backends such as `DummyCache` are not suitable for production multi-worker deployments.
 - Per-request memoization is RECOMMENDED (the §5 decision may run many times per request).
 - Configuration (hierarchy, registry) is immutable at runtime and MAY be cached indefinitely.
 

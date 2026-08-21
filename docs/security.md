@@ -35,7 +35,7 @@ This document outlines the security architecture, threat model, defenses, and pr
 ### Threat 4: Step-Up Token Reuse or Hijacking
 - **Attack**: An attacker captures a ReAuth token from logs or network traffic and attempts to reuse it across multiple endpoints or for another user account.
 - **Defenses**:
-  1. **Atomic Single-Use**: Tokens are checked and deleted atomically from cache on consumption.
+  1. **Single-Use**: Tokens are checked and deleted from cache on consumption.
   2. **Generation Invalidation**: Password changes invalidate all active tokens for that user immediately.
   3. **Strict Binding**: Tokens are bound to the specific `user_id`. Foreign user mismatches fail closed without consuming the token.
   4. **Superusers Gated**: Superusers are never exempt from `RequireReAuth`.
@@ -76,6 +76,10 @@ CACHES = {
     }
 }
 ```
+
+When `REAUTH.ENABLED=True`, Django Scoped Access emits system check `scoped_access.W001` if the default cache is process-local. Treat this warning as production-blocking for Kubernetes: a pod-local cache can reject valid tokens on a different pod and can leave password-change invalidation incomplete across pods.
+
+For high-risk endpoints with heavy concurrent traffic, use a backend/adapter that supports atomic token consumption, such as Redis `GETDEL`. Django's generic cache API provides portability, but not every backend can make the read-and-delete step atomic.
 
 ---
 

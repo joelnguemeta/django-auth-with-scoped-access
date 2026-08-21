@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.1] - 2026-08-21
+
+### Added
+- **Security System Check (`scoped_access.W001`)**: Added a warning when `REAUTH` is enabled but the default Django cache backend is process-local (`LocMemCache` or `DummyCache`) rather than a shared distributed cache (Redis/Memcached).
+- Documented `scoped_access.W001` in the system checks table in `docs/configuration.md`.
+
 ## [0.1.0] - 2026-08-20
 
 ### Added

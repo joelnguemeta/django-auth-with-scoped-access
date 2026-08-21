@@ -132,3 +132,4 @@ Django Scoped Access automatically validates your configuration during `manage.p
 | `scoped_access.E008` | Error | Invalid ORM relationship path in registered resource `anchor`. |
 | `scoped_access.E009` | Error | Invalid `REAUTH.ENABLED` setting. |
 | `scoped_access.E010` | Error | `REAUTH.TTL` must be a positive integer. |
+| `scoped_access.W001` | Warning | `REAUTH` is enabled but the default Django cache is not shared (`LocMemCache`/`DummyCache`). |

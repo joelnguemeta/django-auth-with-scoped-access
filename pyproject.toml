@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-scoped-access"
-version = "0.1.0"
+version = "0.1.1"
 description = "RBAC + hierarchical scope-based authorization (ABAC) + step-up re-authentication for Django. Reference implementation of the Scoped Access specification."
 readme = "README.md"
 requires-python = ">=3.11"

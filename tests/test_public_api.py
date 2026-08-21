@@ -16,6 +16,10 @@ def test_root_all_matches_lazy_map():
     assert sorted(scoped_access.__all__) == sorted(scoped_access._LAZY)
 
 
+def test_package_version():
+    assert scoped_access.__version__ == "0.1.1"
+
+
 def test_root_names_resolve():
     from scoped_access.reauth import ReAuthService
     from scoped_access.reauth.verifiers import register as register_verifier

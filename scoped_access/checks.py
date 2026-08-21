@@ -129,6 +129,21 @@ def check_scoped_access_config(app_configs, **kwargs):
                 )
             )
 
+        if enabled:
+            backend = settings.CACHES.get("default", {}).get("BACKEND", "")
+            unsafe_backends = (
+                "django.core.cache.backends.locmem.LocMemCache",
+                "django.core.cache.backends.dummy.DummyCache",
+            )
+            if backend in unsafe_backends:
+                errors.append(
+                    checks.Warning(
+                        "SCOPED_ACCESS: REAUTH is enabled but the default Django cache is not shared. "
+                        "Use Redis or Memcached in multi-worker/container deployments.",
+                        id="scoped_access.W001",
+                    )
+                )
+
     from .registry import resources
 
     for model, anchor in resources.items():

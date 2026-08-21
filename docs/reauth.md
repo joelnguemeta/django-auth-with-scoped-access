@@ -23,7 +23,7 @@
      │                                                │
      │ 5. DELETE /api/tickets/123/                    │
      │    Header: X-ReAuth-Token: abc123xyz           │
-     ├───────────────────────────────────────────────►│ Validates & burns token atomically
+     ├───────────────────────────────────────────────►│ Validates & burns token
      │                                                │
      │ 6. 204 No Content                              │
      │◄───────────────────────────────────────────────┤ Action executed successfully
@@ -111,7 +111,22 @@ curl -X POST https://api.example.com/api/auth/reauth/ \
 
 ## 5. Security & Invalidation Guarantees
 
-- **Single-Use**: Tokens are burned atomically upon first consumption or upon expiration.
+- **Single-Use**: Tokens are burned upon first successful consumption or upon expiration.
 - **Foreign-Principal Miss**: Presenting token $T$ minted for User A while authenticating as User B fails closed without burning User A's token.
 - **Automatic Invalidation on Password Change**: When a user's password changes, all active ReAuth tokens for that user are immediately invalidated across all workers via generation counters.
-- **Distributed Cache Backend**: In production, ensure `django.core.cache` uses a shared cache backend (e.g. Redis via `django-redis` or Memcached) across application servers.
+- **Distributed Cache Backend**: In production, ensure `django.core.cache` uses a shared cache backend (for example Redis or Memcached) across all application servers.
+
+> [!WARNING]
+> In Kubernetes, ECS, or any multi-worker deployment, do **not** use `LocMemCache` or `DummyCache` for ReAuth. `LocMemCache` is local to each process/pod: a token issued by pod A may be rejected by pod B, and password-change invalidation may not reach every pod. When `REAUTH.ENABLED=True`, Django Scoped Access emits system check `scoped_access.W001` if the default cache is process-local.
+
+```python
+# settings.py
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://redis:6379/1",
+    }
+}
+```
+
+For highly sensitive deployments with heavy concurrent requests, prefer a cache backend or adapter that can consume tokens with an atomic read-and-delete operation (for example Redis `GETDEL`). The built-in implementation uses Django's cache API and cannot guarantee atomic read-and-delete semantics on every backend.

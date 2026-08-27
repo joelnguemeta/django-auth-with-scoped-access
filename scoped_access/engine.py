@@ -21,8 +21,9 @@ logger = logging.getLogger("scoped_access")
 
 # Anchor resolution outcomes (SPEC §4.1)
 NODE = "node"
-GLOBAL = "global"  # unregistered model: skips the scope check only
+GLOBAL = "global"  # explicitly global, or legacy unregistered behavior
 DENIED = "denied"  # registered but null anchor: only root scopes cover it
+UNREGISTERED = "unregistered"  # strict mode: no non-superuser access
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -39,14 +40,16 @@ def _follow(obj, path: str):
 
 
 def resolve_anchor(obj) -> tuple[str, object | None]:
-    """Returns (kind, node) with kind in {NODE, GLOBAL, DENIED}."""
+    """Return (kind, node) after applying the registration policy."""
     cfg = get_config()
     model = type(obj)
     if cfg.hierarchy.is_node_model(model):
         return NODE, obj
+    if resources.is_global(model):
+        return GLOBAL, None
     path = resources.anchor_for(model)
     if path is None:
-        return GLOBAL, None
+        return (UNREGISTERED, None) if cfg.strict_registration else (GLOBAL, None)
     node = _follow(obj, path)
     return (NODE, node) if node is not None else (DENIED, None)
 
@@ -156,10 +159,10 @@ def covers(assignment, obj) -> bool:
     """SPEC §4.2 — inclusive downward, never upward."""
     if not _assignment_is_valid(assignment):
         return False
-    if assignment.is_root_scope:
-        return True
     kind, node = resolve_anchor(obj)
-    if kind == GLOBAL:
+    if kind == UNREGISTERED:
+        return False
+    if assignment.is_root_scope or kind == GLOBAL:
         return True
     if node is None:
         return False
@@ -206,6 +209,8 @@ def user_permissions(user, obj=None, at=None) -> set[str]:
     if not user.is_active:
         return set()
     kind, node = (GLOBAL, None) if obj is None else resolve_anchor(obj)
+    if kind == UNREGISTERED:
+        return set()
     perms: set[str] = set()
     for assignment in effective_assignments(user, at):
         if not _assignment_is_valid(assignment):
@@ -243,6 +248,8 @@ def user_covers(user, obj, at=None) -> bool:
     kind, node = resolve_anchor(obj)
     if kind == GLOBAL:
         return True
+    if kind == UNREGISTERED:
+        return False
     for assignment in effective_assignments(user, at):
         if not _assignment_is_valid(assignment):
             continue
@@ -363,9 +370,13 @@ def scope_filter_q(user, model, at=None) -> Q:
         return node_filter
     if user.is_superuser:
         return Q()
+    if resources.is_global(model):
+        return Q()
     anchor = resources.anchor_for(model)
     if anchor is None:
-        return Q()  # global resources are unrestricted (RBAC still applies)
+        if get_config().strict_registration:
+            return Q(pk__in=[])
+        return Q()  # legacy: unregistered resources are global
 
     cfg = get_config()
     target_levels = _anchor_target_levels(model)

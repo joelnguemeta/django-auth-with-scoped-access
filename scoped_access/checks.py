@@ -102,6 +102,15 @@ def check_scoped_access_config(app_configs, **kwargs):
             )
         )
 
+    strict_registration = raw.get("STRICT_REGISTRATION", False)
+    if not isinstance(strict_registration, bool):
+        errors.append(
+            checks.Error(
+                "SCOPED_ACCESS: STRICT_REGISTRATION must be a boolean.",
+                id="scoped_access.E011",
+            )
+        )
+
     reauth = raw.get("REAUTH", {})
     if not isinstance(reauth, dict):
         errors.append(
@@ -156,5 +165,30 @@ def check_scoped_access_config(app_configs, **kwargs):
                     id="scoped_access.E008",
                 )
             )
+
+    if strict_registration is True:
+        hierarchy_models = set()
+        host_app_labels = {model._meta.app_label for model in resources.models()}
+        for entry in modeled:
+            try:
+                model = apps.get_model(entry["model"])
+            except (LookupError, ValueError):
+                continue
+            hierarchy_models.add(model)
+            host_app_labels.add(model._meta.app_label)
+
+        for app_label in sorted(host_app_labels):
+            for model in apps.get_app_config(app_label).get_models():
+                if model._meta.auto_created or model in hierarchy_models or resources.is_registered(model):
+                    continue
+                errors.append(
+                    checks.Error(
+                        f"SCOPED_ACCESS: model '{model._meta.label}' is neither a hierarchy node, "
+                        "an anchored resource, nor explicitly global.",
+                        hint="Register it with register(...), or declare it with register_global(...).",
+                        obj=model,
+                        id="scoped_access.E012",
+                    )
+                )
 
     return errors

@@ -24,7 +24,10 @@ SCOPED_ACCESS = {
     # 3. Delegation policy ("self" | "any" | list[str] | callable)
     "GRANTABLE_PERMISSIONS": "self",
 
-    # 4. Step-Up Re-Authentication settings
+    # 4. Fail closed when a resource model was not registered
+    "STRICT_REGISTRATION": True,
+
+    # 5. Step-Up Re-Authentication settings
     "REAUTH": {
         "ENABLED": True,
         "TTL": 300,  # Token validity in seconds (default: 300)
@@ -103,6 +106,23 @@ Configuration for the Step-Up Re-Authentication subsystem:
 
 ---
 
+### `STRICT_REGISTRATION` (Optional)
+**Type**: `bool`
+**Default**: `False`
+
+When enabled, models that are neither hierarchy nodes nor registered resources fail closed for non-superusers. Declare intentionally global models explicitly:
+
+```python
+from scoped_access import register, register_global
+
+register(Ticket, anchor="team")
+register_global(Country)
+```
+
+`manage.py check` reports `scoped_access.E012` for unregistered models in the host applications inferred from the hierarchy and resource registry.
+
+---
+
 ### Swappable Model Settings (Optional)
 
 You can customize the concrete `Role` or `ScopeAssignment` models by specifying swappable settings before running migrations:
@@ -132,4 +152,6 @@ Django Scoped Access automatically validates your configuration during `manage.p
 | `scoped_access.E008` | Error | Invalid ORM relationship path in registered resource `anchor`. |
 | `scoped_access.E009` | Error | Invalid `REAUTH.ENABLED` setting. |
 | `scoped_access.E010` | Error | `REAUTH.TTL` must be a positive integer. |
+| `scoped_access.E011` | Error | `STRICT_REGISTRATION` is not a boolean. |
+| `scoped_access.E012` | Error | Strict mode found an unregistered host model. |
 | `scoped_access.W001` | Warning | `REAUTH` is enabled but the default Django cache is not shared (`LocMemCache`/`DummyCache`). |

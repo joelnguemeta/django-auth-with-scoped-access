@@ -31,6 +31,7 @@ DEFAULTS = {
     "HIERARCHY": [],
     "ROLE_OWNER_LEVELS": [],
     "GRANTABLE_PERMISSIONS": "self",
+    "STRICT_REGISTRATION": False,
     "REAUTH": {"ENABLED": False, "TTL": 300},
 }
 
@@ -79,6 +80,7 @@ class ScopedAccessConfig:
     hierarchy: Hierarchy
     role_owner_levels: tuple[str, ...]
     grantable_permissions: object  # "self" | "any" | explicit list
+    strict_registration: bool = False
     reauth: dict = field(default_factory=dict)
 
 
@@ -112,5 +114,6 @@ def get_config() -> ScopedAccessConfig:
         hierarchy=_build_hierarchy(raw["HIERARCHY"]),
         role_owner_levels=tuple(raw["ROLE_OWNER_LEVELS"]),
         grantable_permissions=raw["GRANTABLE_PERMISSIONS"],
+        strict_registration=raw["STRICT_REGISTRATION"],
         reauth={**DEFAULTS["REAUTH"], **raw.get("REAUTH", {})},
     )

@@ -5,7 +5,7 @@ Two registries drive the engine:
 - the **hierarchy** (from settings) — ordered levels, each optionally bound
   to a host model with a parent accessor;
 - the **resource registry** — host models declare an *anchor*: the ORM path
-  from a resource to its node. Unregistered models are *global resources*.
+  from a resource to its node, or explicitly opt into global access.
 """
 
 from __future__ import annotations
@@ -80,25 +80,41 @@ class ResourceRegistry:
 
     def __init__(self):
         self._anchors: dict[type, str] = {}
+        self._globals: set[type] = set()
 
     def register(self, model, *, anchor: str) -> None:
         self._anchors[model] = anchor
+        self._globals.discard(model)
+
+    def register_global(self, model) -> None:
+        """Mark a model as intentionally global rather than unregistered."""
+        self._anchors.pop(model, None)
+        self._globals.add(model)
 
     def unregister(self, model) -> None:
         self._anchors.pop(model, None)
+        self._globals.discard(model)
 
     def clear(self) -> None:
         self._anchors.clear()
+        self._globals.clear()
 
     def anchor_for(self, model) -> str | None:
         return self._anchors.get(model)
 
     def is_registered(self, model) -> bool:
-        return model in self._anchors
+        return model in self._anchors or model in self._globals
+
+    def is_global(self, model) -> bool:
+        return model in self._globals
 
     def items(self):
         """(model, anchor) pairs — read-only view for introspection/checks."""
         return self._anchors.items()
+
+    def models(self) -> set[type]:
+        """Return every explicitly anchored or global model."""
+        return set(self._anchors) | self._globals
 
 
 resources = ResourceRegistry()
@@ -107,3 +123,8 @@ resources = ResourceRegistry()
 def register(model, *, anchor: str) -> None:
     """Public API: `scoped_access.registry.register(Patient, anchor="department")`."""
     resources.register(model, anchor=anchor)
+
+
+def register_global(model) -> None:
+    """Public API: explicitly declare a model as globally scoped."""
+    resources.register_global(model)

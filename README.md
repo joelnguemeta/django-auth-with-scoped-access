@@ -145,19 +145,14 @@ ScopeAssignment.objects.grant(
 
 ```python
 # helpdesk/views.py
-from rest_framework.viewsets import ModelViewSet
 from scoped_access.drf import (
     RequireReAuth,
-    ScopedModelPermission,
-    ScopeObjectPermission,
-    ScopeQuerySetMixin,
-    ScopeWriteGuardMixin,
+    ScopedModelViewSet,
 )
 
-class TicketViewSet(ScopeWriteGuardMixin, ScopeQuerySetMixin, ModelViewSet):
+class TicketViewSet(ScopedModelViewSet):
     queryset = Ticket.objects.all()
     serializer_class = TicketSerializer
-    permission_classes = [ScopedModelPermission, ScopeObjectPermission]
 
     def get_permissions(self):
         permissions = super().get_permissions()

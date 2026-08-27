@@ -20,6 +20,8 @@ from scoped_access.drf import (
     MeAccessView,
     ReAuthView,
     RequireReAuth,
+    ScopedModelViewSet,
+    ScopedReadOnlyModelViewSet,
     ScopeObjectPermission,
     ScopeQuerySetMixin,
     ScopeWriteGuardMixin,
@@ -59,6 +61,7 @@ class NodeSerializer(serializers.ModelSerializer):
 class NodeViewSet(ScopeQuerySetMixin, viewsets.ReadOnlyModelViewSet):
     queryset = Node.objects.all()
     serializer_class = NodeSerializer
+    scope_filter_all_actions = True
 
 
 class WritableResourceSerializer(serializers.ModelSerializer):
@@ -71,6 +74,21 @@ class GuardedResourceViewSet(ScopeWriteGuardMixin, ScopeQuerySetMixin, viewsets.
     queryset = Resource.objects.all()
     serializer_class = WritableResourceSerializer
     permission_classes = [ScopeObjectPermission]
+
+
+class SecureResourceViewSet(ScopedModelViewSet):
+    queryset = Resource.objects.all()
+    serializer_class = WritableResourceSerializer
+
+
+class SecureReadOnlyResourceViewSet(ScopedReadOnlyModelViewSet):
+    queryset = Resource.objects.all()
+    serializer_class = ResourceSerializer
+
+
+class MisconfiguredResourceViewSet(ScopeQuerySetMixin, viewsets.ReadOnlyModelViewSet):
+    queryset = Resource.objects.all()
+    serializer_class = ResourceSerializer
 
 
 class SensitiveView(APIView):
@@ -167,6 +185,64 @@ def test_write_guard_allows_update_within_scope(org_world):
     request = factory.patch(f"/resources/{org_world['res_a'].pk}/", {"slug": "renamed"})
     force_authenticate(request, user=org_world["user"])
     response = GuardedResourceViewSet.as_view({"patch": "partial_update"})(request, pk=org_world["res_a"].pk)
+    assert response.status_code == 200
+
+
+def _grant_resource_permissions(org_world):
+    assignment = ScopeAssignment.objects.get(user=org_world["user"])
+    actor = get_user_model().objects.get(username="boss")
+    content_type = ContentType.objects.get_for_model(Resource)
+    permissions = [
+        Permission.objects.get(content_type=content_type, codename=f"{action}_resource")
+        for action in ("view", "add", "change", "delete")
+    ]
+    assignment.role.grant_permissions(*permissions, by=actor)
+
+
+def test_scoped_read_only_viewset_filters_list_and_blocks_foreign_detail(org_world):
+    _grant_resource_permissions(org_world)
+    list_request = factory.get("/resources/")
+    force_authenticate(list_request, user=org_world["user"])
+    response = SecureReadOnlyResourceViewSet.as_view({"get": "list"})(list_request)
+    assert response.status_code == 200
+    assert [resource["slug"] for resource in response.data] == ["res-a"]
+
+    detail = SecureReadOnlyResourceViewSet.as_view({"get": "retrieve"})
+    request = factory.get("/resources/x/")
+    force_authenticate(request, user=org_world["user"])
+    assert detail(request, pk=org_world["res_b"].pk).status_code == 403
+
+
+def test_scoped_model_viewset_protects_create_update_and_destroy(org_world):
+    _grant_resource_permissions(org_world)
+    org_b = Node.objects.get(slug="org-b")
+
+    create = factory.post("/resources/", {"slug": "blocked", "anchor": org_b.pk})
+    force_authenticate(create, user=org_world["user"])
+    assert SecureResourceViewSet.as_view({"post": "create"})(create).status_code == 403
+
+    update = factory.patch(f"/resources/{org_world['res_b'].pk}/", {"slug": "blocked"})
+    force_authenticate(update, user=org_world["user"])
+    update_response = SecureResourceViewSet.as_view({"patch": "partial_update"})(
+        update,
+        pk=org_world["res_b"].pk,
+    )
+    assert update_response.status_code == 403
+
+    destroy = factory.delete(f"/resources/{org_world['res_b'].pk}/")
+    force_authenticate(destroy, user=org_world["user"])
+    destroy_response = SecureResourceViewSet.as_view({"delete": "destroy"})(
+        destroy,
+        pk=org_world["res_b"].pk,
+    )
+    assert destroy_response.status_code == 403
+
+
+def test_scope_queryset_mixin_warns_when_detail_routes_are_unprotected(org_world):
+    request = factory.get("/resources/")
+    force_authenticate(request, user=org_world["user"])
+    with pytest.warns(RuntimeWarning, match="without ScopeObjectPermission"):
+        response = MisconfiguredResourceViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 200
 
 

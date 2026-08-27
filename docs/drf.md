@@ -8,6 +8,8 @@ Django Scoped Access provides a complete set of permissions, mixins, and views d
 
 | Component | Type | Purpose |
 |---|---|---|
+| `ScopedModelViewSet` | ViewSet | Secure CRUD default combining model permissions, object scope checks, list filtering, and write guards. |
+| `ScopedReadOnlyModelViewSet` | ViewSet | Secure read-only default combining model permissions, object scope checks, and list filtering. |
 | `ScopedModelPermission` | Permission | Maps HTTP methods (`GET` → `view_*`, `POST` → `add_*`, `PUT/PATCH` → `change_*`, `DELETE` → `delete_*`). Read access requires explicit `view_*`. |
 | `ScopeObjectPermission` | Permission | Object-level permission checking if the target resource's anchor is covered by the caller's scope. |
 | `ScopeQuerySetMixin` | ViewSet Mixin | Filters collection querysets in SQL so `list` actions only return resources inside the caller's scope. |
@@ -20,25 +22,20 @@ Django Scoped Access provides a complete set of permissions, mixins, and views d
 
 ## 2. Setting Up ViewSets
 
-To protect a standard `ModelViewSet`, combine the mixins and permission classes:
+Start from `ScopedModelViewSet` so list, detail, and write protections cannot be accidentally separated:
 
 ```python
 # views.py
-from rest_framework.viewsets import ModelViewSet
 from helpdesk.models import Ticket
 from helpdesk.serializers import TicketSerializer
 from scoped_access.drf import (
     RequireReAuth,
-    ScopedModelPermission,
-    ScopeObjectPermission,
-    ScopeQuerySetMixin,
-    ScopeWriteGuardMixin,
+    ScopedModelViewSet,
 )
 
-class TicketViewSet(ScopeWriteGuardMixin, ScopeQuerySetMixin, ModelViewSet):
+class TicketViewSet(ScopedModelViewSet):
     queryset = Ticket.objects.select_related("team__organization")
     serializer_class = TicketSerializer
-    permission_classes = [ScopedModelPermission, ScopeObjectPermission]
 
     def get_permissions(self):
         permissions = super().get_permissions()
@@ -51,6 +48,7 @@ class TicketViewSet(ScopeWriteGuardMixin, ScopeQuerySetMixin, ModelViewSet):
 > [!WARNING]
 > **Best Practice against IDOR**:  
 > Always include `ScopeObjectPermission` alongside `ScopeQuerySetMixin`. `ScopeQuerySetMixin` filters the list view, while `ScopeObjectPermission` enforces scope checks on detail endpoints (`retrieve`, `update`, `destroy`).
+> Prefer the unified ViewSets above. A runtime warning is emitted when `ScopeQuerySetMixin` is used without object-level protection or full-action queryset filtering.
 
 ---
 

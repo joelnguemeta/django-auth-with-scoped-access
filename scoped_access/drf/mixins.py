@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import warnings
 
 from django.core.exceptions import FieldDoesNotExist
 from rest_framework.exceptions import PermissionDenied
@@ -28,10 +29,35 @@ class ScopeQuerySetMixin:
     scope_filter_all_actions = False
 
     def get_queryset(self):
+        self._warn_if_detail_routes_are_unprotected()
         qs = super().get_queryset()
         if not (self.scope_filter_all_actions or getattr(self, "action", None) == "list"):
             return qs
         return qs.filter(engine.scope_filter_q(self.request.user, qs.model)).distinct()
+
+    def _warn_if_detail_routes_are_unprotected(self) -> None:
+        """Warn when detail routes have neither filtering nor a scope gate."""
+        if self.scope_filter_all_actions:
+            return
+
+        # Import lazily to keep the mixins module independent from the
+        # permissions module during package initialization.
+        from .permissions import ScopeObjectPermission
+
+        permission_classes = getattr(self, "permission_classes", ())
+        if any(
+            isinstance(permission, type) and issubclass(permission, ScopeObjectPermission)
+            for permission in permission_classes
+        ):
+            return
+
+        warnings.warn(
+            f"{type(self).__name__} uses ScopeQuerySetMixin without ScopeObjectPermission; "
+            "detail routes may expose out-of-scope objects. Add ScopeObjectPermission or set "
+            "scope_filter_all_actions = True.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
 
 def _apply_payload(serializer):

@@ -10,6 +10,7 @@ except ImportError as exc:
 from .mixins import ScopeQuerySetMixin, ScopeWriteGuardMixin
 from .permissions import RequireReAuth, ScopedModelPermission, ScopeObjectPermission
 from .views import MeAccessView, ReAuthView
+from .viewsets import ScopedModelViewSet, ScopedReadOnlyModelViewSet
 
 __all__ = [
     "MeAccessView",
@@ -19,4 +20,6 @@ __all__ = [
     "ScopeQuerySetMixin",
     "ScopeWriteGuardMixin",
     "ScopedModelPermission",
+    "ScopedModelViewSet",
+    "ScopedReadOnlyModelViewSet",
 ]

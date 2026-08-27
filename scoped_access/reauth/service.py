@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from .. import signals
 from ..conf import get_config
-from . import verifiers
+from . import atomic, verifiers
 
 TOKEN_PREFIX = "scoped_access:reauth:"
 GENERATION_PREFIX = "scoped_access:reauth:generation:"
@@ -47,6 +47,9 @@ class ReAuthService:
     @classmethod
     def issue(cls, user, *, verifier: str = "password", at=None, **credentials) -> str | None:
         """Verify the proof and mint a token; None on failure."""
+        if not user.is_active:
+            signals.reauth_failed.send(sender=cls, user=user)
+            return None
         verifier_inst = verifiers.get(verifier)
         if not verifier_inst or not verifier_inst.verify(user, **credentials):
             signals.reauth_failed.send(sender=cls, user=user)
@@ -72,7 +75,9 @@ class ReAuthService:
         """Atomic check-and-delete. A foreign-principal miss does NOT burn
         the token (SPEC §12.1.1); success and expiry do.
         """
-        if not token:
+        if not token or not user.is_active:
+            if token:
+                signals.reauth_failed.send(sender=cls, user=user)
             return False
         key = f"{TOKEN_PREFIX}{token}"
         data = cache.get(key)
@@ -82,16 +87,21 @@ class ReAuthService:
         if data["user_id"] != str(user.pk):
             signals.reauth_failed.send(sender=cls, user=user)
             return False
-        generation = data.get("generation")
-        if generation != cls._generation(user):
-            cache.delete(key)
+
+        ttl = int(get_config().reauth["TTL"])
+        data = atomic.atomic_pop(key, data, token=token, timeout=ttl * 2)
+        if data is None:
             signals.reauth_failed.send(sender=cls, user=user)
             return False
+
+        # Revalidate the atomically retrieved payload. The token key is
+        # immutable, but this keeps custom cache adapters fail-closed.
+        if data["user_id"] != str(user.pk):
+            signals.reauth_failed.send(sender=cls, user=user)
+            return False
+        generation = data.get("generation")
         now = at or timezone.now()
         expires = timezone.datetime.fromisoformat(data["expires"])
-        if not cache.delete(key):  # single use — burned on success or expiry
-            signals.reauth_failed.send(sender=cls, user=user)
-            return False
         if now >= expires:
             signals.reauth_failed.send(sender=cls, user=user)
             return False

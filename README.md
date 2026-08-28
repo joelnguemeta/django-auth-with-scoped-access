@@ -117,6 +117,8 @@ class HelpdeskConfig(AppConfig):
         register(Ticket, anchor="team")
 ```
 
+For fail-closed deployments, enable `STRICT_REGISTRATION` and declare intentionally global models with `register_global(Model)`.
+
 ### 4. Create Roles & Grant Assignments
 
 ```python

@@ -48,19 +48,23 @@ A **Resource** is any business object in your application (e.g., `Patient`, `Inv
 To integrate a resource with the authorization engine, you **register an anchor**: the ORM relationship path from the resource to its hierarchy node.
 
 ```python
-from scoped_access import register
+from scoped_access import register, register_global
 
 # Direct anchor: Ticket -> Team
 register(Ticket, anchor="team")
 
 # Multi-hop anchor: MedicalRecord -> Encounter -> Facility
 register(MedicalRecord, anchor="encounter__facility")
+
+# Explicitly global: RBAC applies, but no hierarchy scope is required.
+register_global(Country)
 ```
 
 ### Registered vs. Global Resources
 
 - **Registered Resource**: Attached to a node. Access checks verify both RBAC permissions **and** scope coverage.
-- **Unregistered (Global) Resource**: Not attached to any hierarchy node. Scope checks are skipped; standard RBAC permissions apply globally.
+- **Explicitly Global Resource**: Declared with `register_global()`. Scope checks are skipped; standard RBAC permissions still apply.
+- **Unregistered Resource**: Behaves as global by default for compatibility, but fails closed when `STRICT_REGISTRATION=True`.
 - **Null Anchor (Denied Resource)**: If a registered resource's anchor resolves to `None` (e.g., an unassigned ticket), access is **denied by default** to all non-root users.
 
 ---

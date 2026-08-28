@@ -23,9 +23,10 @@ def test_package_version():
 def test_root_names_resolve():
     from scoped_access.reauth import ReAuthService
     from scoped_access.reauth.verifiers import register as register_verifier
-    from scoped_access.registry import register
+    from scoped_access.registry import register, register_global
 
     assert scoped_access.register is register
+    assert scoped_access.register_global is register_global
     assert scoped_access.ReAuthService is ReAuthService
     assert scoped_access.register_verifier is register_verifier
     assert callable(scoped_access.engine.has_perm)

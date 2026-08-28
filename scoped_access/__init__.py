@@ -20,10 +20,19 @@ from importlib import import_module
 
 __version__ = "0.1.1"
 
-__all__ = ["ReAuthService", "RoleService", "engine", "register", "register_verifier", "signals"]
+__all__ = [
+    "ReAuthService",
+    "RoleService",
+    "engine",
+    "register",
+    "register_global",
+    "register_verifier",
+    "signals",
+]
 
 _LAZY = {
     "register": ("scoped_access.registry", "register"),
+    "register_global": ("scoped_access.registry", "register_global"),
     "engine": ("scoped_access.engine", None),
     "signals": ("scoped_access.signals", None),
     "ReAuthService": ("scoped_access.reauth", "ReAuthService"),

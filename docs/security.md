@@ -4,7 +4,33 @@ This document outlines the security architecture, threat model, defenses, and pr
 
 ---
 
-## 1. Threat Model & Defenses
+## 1. Threat Model, Assumptions & Security Boundaries
+
+### What the library protects
+
+Django Scoped Access is designed to protect trusted Django applications against:
+
+- unauthorized external clients reaching APIs, views, and admin workflows that use the library's authorization integration;
+- cross-tenant object access, scope injection, and privilege delegation beyond the caller's effective authority;
+- accidental developer mistakes in ordinary application code, such as direct assignment mutation or an incomplete DRF ViewSet configuration;
+- concurrent ReAuth token reuse and stale authorization state handled through the documented database and cache paths.
+
+### Trust assumptions
+
+The security guarantees assume that:
+
+- Django authentication supplies the correct active principal and the application invokes authorization before releasing or mutating protected data;
+- the database, shared cache, operating system, deployment credentials, and application startup configuration are trusted;
+- resource and global-model registrations run during application startup, before traffic is accepted;
+- custom authentication backends, ReAuth verifiers, cache backends, serializers, and permission policies honor their documented contracts.
+
+### Out of scope
+
+Python does not provide an in-process sandbox. Code that is hostile or already compromised inside the Django process can bypass high-level safeguards by using raw SQL, private managers such as `Model._base_manager`, monkey-patching, importing internal mutation contexts, or calling the database directly. Likewise, a database administrator or attacker holding database credentials with broader privileges can modify authorization state outside the library.
+
+The library also cannot protect endpoints that omit its permission checks, query paths that never call the engine, compromised infrastructure, credential theft, transport-layer attacks, or sensitive values written to application logs. Use code review, tests, least-privilege deployment credentials, database auditing, TLS, secret management, and platform-level monitoring as complementary controls.
+
+## 2. Threats & Defenses
 
 ### Threat 1: Cross-Tenant Data Access (IDOR / BOLA)
 - **Attack**: A user authorized in *Organization A* attempts to access or mutate resources in *Organization B* by manipulating resource IDs in REST URLs (`GET /api/patients/999/`).
@@ -24,11 +50,13 @@ This document outlines the security architecture, threat model, defenses, and pr
 ---
 
 ### Threat 3: Circumventing Lifecycle Audit Trails
-- **Attack**: A rogue developer or compromised endpoint attempts to hard-delete or bulk-modify assignments via direct ORM calls (`ScopeAssignment.objects.filter(...).delete()`).
+- **Attack**: An application bug or exposed endpoint attempts to hard-delete or bulk-modify assignments through the normal ORM surface (`ScopeAssignment.objects.filter(...).delete()`).
 - **Defenses**:
   1. `AbstractScopeAssignment.delete()` raises `AssignmentDeletionError`. Assignments must be terminated via `.revoke()`.
   2. Direct mutations without managed context tokens (`managed_assignment_mutation()`) raise `DirectAssignmentMutationError`.
   3. Transitions between `ACTIVE`, `SUSPENDED`, and `REVOKED` are guarded by atomic SQL conditional updates.
+
+These are application guardrails, not a sandbox against hostile in-process Python or direct database access. Revoke `DELETE` from the production runtime database role as described below when immutable assignment history is required.
 
 ---
 
@@ -42,25 +70,32 @@ This document outlines the security architecture, threat model, defenses, and pr
 
 ---
 
-## 2. Production Security Checklist
+## 3. Production Security Checklist
 
 ### 1. Configure Throttling on ReAuth Endpoint
-Protect `POST /api/auth/reauth/` against brute-force attacks by enabling Django REST Framework rate limiting:
+Protect `POST /api/auth/reauth/` against brute-force attacks with a dedicated, authenticated-user throttle. Defining a rate alone is insufficient; the endpoint must also attach a throttle using that scope:
 
 ```python
 # settings.py
 REST_FRAMEWORK = {
-    "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
-    ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "100/day",
-        "user": "1000/day",
         "scoped_access_reauth": "5/minute",
     },
 }
 ```
+
+```python
+# views.py
+from rest_framework.throttling import ScopedRateThrottle
+from scoped_access.drf import ReAuthView
+
+
+class ThrottledReAuthView(ReAuthView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "scoped_access_reauth"
+```
+
+Also rate-limit by source IP at the reverse proxy or API gateway. DRF's built-in throttles are useful application controls, but they are not a denial-of-service defense and may allow short bursts.
 
 ---
 
@@ -83,16 +118,19 @@ ReAuth consumption is atomic under concurrent requests: Redis uses `GETDEL` or L
 
 ---
 
-### 3. Pair `ScopeQuerySetMixin` with `ScopeObjectPermission`
-When writing ViewSets:
+### 3. Start DRF Endpoints from the Unified ViewSets
+Prefer the secure-by-default base class so model permissions, detail-object scope checks, list filtering, and write guards remain together:
 
 ```python
-# ✅ SECURE: Both list and detail actions are protected
-class PatientViewSet(ScopeWriteGuardMixin, ScopeQuerySetMixin, ModelViewSet):
+from scoped_access.drf import ScopedModelViewSet
+
+
+class PatientViewSet(ScopedModelViewSet):
     queryset = Patient.objects.all()
     serializer_class = PatientSerializer
-    permission_classes = [ScopedModelPermission, ScopeObjectPermission]
 ```
+
+If composing mixins manually, pair `ScopeQuerySetMixin` with `ScopeObjectPermission`, and add `ScopeWriteGuardMixin` to writable ViewSets.
 
 ---
 
@@ -106,3 +144,29 @@ MIDDLEWARE = [
     "scoped_access.cache.ScopedAccessCacheMiddleware",
 ]
 ```
+
+---
+
+### 5. Restrict the Runtime Database Role
+
+Use separate database roles for migrations/operations and for the running application. The runtime role needs to update assignment rows for lifecycle transitions, but it should not be able to hard-delete the audit trail.
+
+For PostgreSQL with the default assignment model and a runtime role named `app_runtime`:
+
+```sql
+REVOKE DELETE ON TABLE scoped_access_scopeassignment FROM app_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE scoped_access_scopeassignment TO app_runtime;
+```
+
+Adjust the table and role names when using a swapped assignment model. Audit inherited roles, schema grants, ownership, and `PUBLIC` privileges too: a `REVOKE` on one direct grant is ineffective if the runtime principal inherits `DELETE` through another role. Keep migration credentials out of application containers and verify the effective permissions in deployment tests.
+
+Database permissions reduce the impact of raw SQL executed with the runtime credentials. They do not protect against a database owner, superuser, compromised migration credential, or another principal that retains broader grants.
+
+---
+
+### 6. Protect ReAuth Tokens and Audit Security Events
+
+- Require TLS from the client through the trusted ingress path.
+- Never place `X-ReAuth-Token` values, passwords, or verifier proofs in logs, traces, analytics, or error reports.
+- Restrict access to the shared cache and isolate its keyspace from untrusted applications.
+- Monitor ReAuth failure signals, role changes, assignment lifecycle events, system-check failures, and unexpected database permission errors.

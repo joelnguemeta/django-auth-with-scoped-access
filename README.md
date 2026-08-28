@@ -4,7 +4,7 @@
   <a href="https://pypi.org/project/django-scoped-access/"><img src="https://img.shields.io/pypi/v/django-scoped-access.svg?color=blue" alt="PyPI version"></a>
   <a href="https://pypi.org/project/django-scoped-access/"><img src="https://img.shields.io/pypi/pyversions/django-scoped-access.svg" alt="Python Versions"></a>
   <a href="https://pypi.org/project/django-scoped-access/"><img src="https://img.shields.io/pypi/djversions/django-scoped-access.svg" alt="Django Versions"></a>
-  <a href="https://django-scoped-access.readthedocs.io/"><img src="https://img.shields.io/readthedocs/django-scoped-access.svg" alt="Documentation Status"></a>
+  <a href="https://django-auth-with-scoped-access.readthedocs.io/"><img src="https://img.shields.io/readthedocs/django-auth-with-scoped-access.svg" alt="Documentation Status"></a>
   <a href="https://github.com/joelnguemeta/django-auth-with-scoped-access/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
 </p>
 
@@ -213,16 +213,16 @@ uv run pytest
 
 ## 📚 Documentation
 
-Complete documentation is available at [https://django-scoped-access.readthedocs.io/](https://django-scoped-access.readthedocs.io/):
+Complete documentation is available at [https://django-auth-with-scoped-access.readthedocs.io/](https://django-auth-with-scoped-access.readthedocs.io/):
 
-- [Quickstart Guide](https://django-scoped-access.readthedocs.io/quickstart/)
-- [Core Concepts & Architecture](https://django-scoped-access.readthedocs.io/concepts/)
-- [Configuration Reference](https://django-scoped-access.readthedocs.io/configuration/)
-- [Django REST Framework (DRF) Integration](https://django-scoped-access.readthedocs.io/drf/)
-- [Step-Up Re-Authentication (ReAuth)](https://django-scoped-access.readthedocs.io/reauth/)
-- [Lifecycle & Auditability](https://django-scoped-access.readthedocs.io/lifecycle/)
-- [Security Guide & Threat Model](https://django-scoped-access.readthedocs.io/security/)
-- [Formal Specification (SPEC)](https://django-scoped-access.readthedocs.io/spec/)
+- [Quickstart Guide](https://django-auth-with-scoped-access.readthedocs.io/quickstart/)
+- [Core Concepts & Architecture](https://django-auth-with-scoped-access.readthedocs.io/concepts/)
+- [Configuration Reference](https://django-auth-with-scoped-access.readthedocs.io/configuration/)
+- [Django REST Framework (DRF) Integration](https://django-auth-with-scoped-access.readthedocs.io/drf/)
+- [Step-Up Re-Authentication (ReAuth)](https://django-auth-with-scoped-access.readthedocs.io/reauth/)
+- [Lifecycle & Auditability](https://django-auth-with-scoped-access.readthedocs.io/lifecycle/)
+- [Security Guide & Threat Model](https://django-auth-with-scoped-access.readthedocs.io/security/)
+- [Formal Specification (SPEC)](https://django-auth-with-scoped-access.readthedocs.io/spec/)
 
 ---
 

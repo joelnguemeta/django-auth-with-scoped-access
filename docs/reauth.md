@@ -129,4 +129,4 @@ CACHES = {
 }
 ```
 
-For highly sensitive deployments with heavy concurrent requests, prefer a cache backend or adapter that can consume tokens with an atomic read-and-delete operation (for example Redis `GETDEL`). The built-in implementation uses Django's cache API and cannot guarantee atomic read-and-delete semantics on every backend.
+Token consumption elects exactly one winner under concurrent requests. Redis backends use `GETDEL` (with an atomic Lua fallback for Redis versions before 6.2). Other Django cache backends use `cache.add()` as an atomic consumption claim before deleting the token. Custom cache backends must therefore honor Django's atomic add-if-absent contract.

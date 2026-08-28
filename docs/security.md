@@ -79,7 +79,7 @@ CACHES = {
 
 When `REAUTH.ENABLED=True`, Django Scoped Access emits system check `scoped_access.W001` if the default cache is process-local. Treat this warning as production-blocking for Kubernetes: a pod-local cache can reject valid tokens on a different pod and can leave password-change invalidation incomplete across pods.
 
-For high-risk endpoints with heavy concurrent traffic, use a backend/adapter that supports atomic token consumption, such as Redis `GETDEL`. Django's generic cache API provides portability, but not every backend can make the read-and-delete step atomic.
+ReAuth consumption is atomic under concurrent requests: Redis uses `GETDEL` or Lua, while other Django backends use an atomic `cache.add()` claim. If you provide a custom cache backend, verify that its `add()` implementation is genuinely atomic across workers.
 
 ---
 

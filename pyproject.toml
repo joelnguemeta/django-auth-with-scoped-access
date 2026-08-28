@@ -42,7 +42,7 @@ dependencies = ["Django>=4.2"]
 
 [project.urls]
 Homepage = "https://github.com/joelnguemeta/django-auth-with-scoped-access"
-Documentation = "https://django-scoped-access.readthedocs.io/"
+Documentation = "https://django-auth-with-scoped-access.readthedocs.io/"
 Repository = "https://github.com/joelnguemeta/django-auth-with-scoped-access"
 Issues = "https://github.com/joelnguemeta/django-auth-with-scoped-access/issues"
 Changelog = "https://github.com/joelnguemeta/django-auth-with-scoped-access/blob/main/CHANGELOG.md"

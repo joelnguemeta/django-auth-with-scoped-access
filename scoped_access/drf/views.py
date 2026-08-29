@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 from .. import engine
 from ..conf import get_config
 from ..reauth import ReAuthService
+from .throttling import ReAuthRateThrottle
 
 
 class MeAccessView(APIView):
@@ -58,6 +59,7 @@ class ReAuthView(APIView):
     """Exchange a fresh proof (v1: password) for a single-use step-up token."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ReAuthRateThrottle]
 
     def post(self, request):
         verifier = request.data.get("verifier", "password")

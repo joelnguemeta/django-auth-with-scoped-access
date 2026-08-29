@@ -213,6 +213,55 @@ def test_scoped_read_only_viewset_filters_list_and_blocks_foreign_detail(org_wor
     assert detail(request, pk=org_world["res_b"].pk).status_code == 403
 
 
+def test_scoped_viewset_does_not_combine_permission_in_one_scope_with_coverage_in_another(org_world):
+    """A permission in org-a plus an unrelated assignment in org-b is not access to org-b."""
+    _grant_resource_permissions(org_world)
+    actor = get_user_model().objects.get(username="boss")
+    unrelated_role = RoleService.create(by=actor, name="unrelated member")
+    org_b = Node.objects.get(slug="org-b")
+    ScopeAssignment.objects.grant(
+        user=org_world["user"],
+        role=unrelated_role,
+        scope=org_b,
+        by=actor,
+    )
+
+    list_request = factory.get("/resources/")
+    force_authenticate(list_request, user=org_world["user"])
+    response = SecureReadOnlyResourceViewSet.as_view({"get": "list"})(list_request)
+    assert response.status_code == 200
+    assert [resource["slug"] for resource in response.data] == ["res-a"]
+
+    detail_request = factory.get(f"/resources/{org_world['res_b'].pk}/")
+    force_authenticate(detail_request, user=org_world["user"])
+    detail_response = SecureReadOnlyResourceViewSet.as_view({"get": "retrieve"})(
+        detail_request,
+        pk=org_world["res_b"].pk,
+    )
+    assert detail_response.status_code == 403
+
+
+def test_scoped_write_guard_requires_add_permission_at_target_scope(org_world):
+    """Scope coverage alone cannot borrow add permission from another tenant."""
+    _grant_resource_permissions(org_world)
+    actor = get_user_model().objects.get(username="boss")
+    unrelated_role = RoleService.create(by=actor, name="org-b member")
+    org_b = Node.objects.get(slug="org-b")
+    ScopeAssignment.objects.grant(
+        user=org_world["user"],
+        role=unrelated_role,
+        scope=org_b,
+        by=actor,
+    )
+
+    request = factory.post("/resources/", {"slug": "blocked", "anchor": org_b.pk})
+    force_authenticate(request, user=org_world["user"])
+    response = SecureResourceViewSet.as_view({"post": "create"})(request)
+
+    assert response.status_code == 403
+    assert not Resource.objects.filter(slug="blocked").exists()
+
+
 def test_scoped_model_viewset_protects_create_update_and_destroy(org_world):
     _grant_resource_permissions(org_world)
     org_b = Node.objects.get(slug="org-b")
@@ -284,3 +333,19 @@ def test_reauth_http_flow_single_use(org_world):
 
     assert sensitive(token).status_code == 200
     assert sensitive(token).status_code == 403  # single use
+
+
+def test_reauth_endpoint_is_throttled_per_user(settings, org_world):
+    settings.SCOPED_ACCESS = {
+        **SCOPED_ACCESS_ORG,
+        "REAUTH": {"ENABLED": True, "TTL": 300, "RATE": "2/minute"},
+    }
+    user = org_world["user"]
+
+    statuses = []
+    for _ in range(3):
+        request = factory.post("/auth/reauth/", {"password": "wrong"})
+        force_authenticate(request, user=user)
+        statuses.append(ReAuthView.as_view()(request).status_code)
+
+    assert statuses == [400, 400, 429]

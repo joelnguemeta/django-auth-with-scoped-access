@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Security
+- Bind DRF method permissions and scope coverage to the same effective assignment for list, detail, create, and update operations.
+- Prevent assignment managers from assigning roles whose permissions exceed their effective authority at the target scope.
+- Make assignment grants transactional so signal failures cannot leave partially completed lifecycle operations.
+- Apply a dedicated per-user throttle to the ReAuth credential endpoint, defaulting to `5/minute`.
+
 ## [0.1.1] - 2026-08-21
 
 ### Added

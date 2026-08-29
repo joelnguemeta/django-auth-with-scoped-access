@@ -141,5 +141,5 @@ SCOPED_ACCESS = {
         {"level": "TEAM", "model": "helpdesk.Team", "parent": "organization"},
     ],
     "ROLE_OWNER_LEVELS": ["ORGANIZATION"],
-    "REAUTH": {"ENABLED": True, "TTL": 300},
+    "REAUTH": {"ENABLED": True, "TTL": 300, "RATE": "5/minute"},
 }

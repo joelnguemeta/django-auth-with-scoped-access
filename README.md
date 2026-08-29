@@ -46,7 +46,7 @@ Whether building a single-tenant app (flat RBAC), a multi-tenant B2B SaaS (Organ
 - 🌲 **Hierarchy as Configuration, Not Schema**: Configure any arbitrary tree depth or degrade to standard RBAC at depth 0.
 - 🎯 **Domain Agnostic**: The engine never owns your models. Hierarchy nodes and role owners link via generic relations (`GenericForeignKey`).
 - 🔒 **Inclusive Downward Scope Coverage**: A role grant at `REGIONAL` covers all descendant nodes (Districts, Facilities, Units) in that subtree, and never upwards.
-- 🛡️ **Anti-Escalation Protection (Rule R5)**: Tenant admins can manage custom roles within their scope, but can **never** grant permissions they do not possess themselves.
+- 🛡️ **Anti-Escalation Protection (Rules R5/R7)**: Tenant admins can manage roles and assignments within their scope, but can **never** create or assign authority they do not possess themselves.
 - ⏱️ **Temporal Validity & Audit Trail**: Assignments support `valid_from` / `valid_until` windows and status transitions (`ACTIVE` ⇄ `SUSPENDED` → `REVOKED`). Assignments are **never hard-deleted**.
 - 🔐 **Step-Up Re-Authentication (ReAuth)**: Require fresh, single-use proof of identity (passwords, PIN, WebAuthn, TOTP) for high-risk actions. Superusers are not exempt.
 - ⚡ **Database-Level Query Filtering**: SQL-level filtering (`scope_filter_q()`) for collection views—no in-memory Python iteration.
@@ -88,7 +88,7 @@ SCOPED_ACCESS = {
     ],
     "ROLE_OWNER_LEVELS": ["ORGANIZATION"],
     "GRANTABLE_PERMISSIONS": "self",
-    "REAUTH": {"ENABLED": True, "TTL": 300},
+    "REAUTH": {"ENABLED": True, "TTL": 300, "RATE": "5/minute"},
 }
 ```
 

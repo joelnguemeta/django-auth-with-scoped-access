@@ -45,22 +45,21 @@ This document outlines the security architecture, threat model, defenses, and pr
 ## 2. Production Security Checklist
 
 ### 1. Configure Throttling on ReAuth Endpoint
-Protect `POST /api/auth/reauth/` against brute-force attacks by enabling Django REST Framework rate limiting:
+`ReAuthView` applies a dedicated authenticated-user throttle. Configure its rate in `SCOPED_ACCESS`:
 
 ```python
 # settings.py
-REST_FRAMEWORK = {
-    "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
-    ],
-    "DEFAULT_THROTTLE_RATES": {
-        "anon": "100/day",
-        "user": "1000/day",
-        "scoped_access_reauth": "5/minute",
+SCOPED_ACCESS = {
+    "REAUTH": {
+        "ENABLED": True,
+        "TTL": 300,
+        "RATE": "5/minute",
     },
 }
 ```
+
+Also rate-limit by source IP at the reverse proxy or API gateway. Application
+throttling is not a denial-of-service boundary.
 
 ---
 

@@ -130,6 +130,14 @@ def test_e010_reauth_ttl_must_be_a_positive_integer(ttl):
     )
 
 
+@pytest.mark.parametrize("rate", [None, 5, "", "minute", "0/minute", "x/minute", "5/year"])
+def test_e013_reauth_rate_must_be_a_drf_rate_string(rate):
+    assert "scoped_access.E013" in _error_ids(
+        HIERARCHY=VALID_HIERARCHY,
+        REAUTH={"RATE": rate},
+    )
+
+
 def test_valid_reauth_config_passes(settings):
     settings.CACHES = {
         "default": {

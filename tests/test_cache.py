@@ -10,11 +10,12 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
 from django.utils import timezone
 
-from scoped_access import RoleService, engine
+from scoped_access import RoleService, engine, signals
 from scoped_access.cache import request_cache
-from scoped_access.models import ScopeAssignment
+from scoped_access.models import AssignmentStatus, ScopeAssignment
 from tests.testapp.models import Node
 
 SCOPED_ACCESS_ORG = {
@@ -92,3 +93,73 @@ def test_assignment_reactivate_invalidates_request_cache(world):
         # Permission becomes immediately effective in the same request
         assert engine.user_permissions(user) == {"things.view_thing"}
         assert engine.has_perm(user, "things.view_thing") is True
+
+
+def test_revocation_receiver_failure_rolls_back_and_clears_warm_request_cache(world):
+    user = world["user"]
+    assignment = ScopeAssignment.objects.get(user=user)
+    seen_during_signal = []
+
+    def reject_after_checking_authority(sender, **kwargs):
+        seen_during_signal.append(engine.has_perm(user, "things.view_thing"))
+        raise RuntimeError("audit sink unavailable")
+
+    uid = "test_revocation_receiver_failure_rolls_back_and_clears_warm_request_cache"
+    signals.assignment_revoked.connect(reject_after_checking_authority, weak=False, dispatch_uid=uid)
+    try:
+        with request_cache():
+            assert engine.has_perm(user, "things.view_thing") is True
+
+            with pytest.raises(RuntimeError, match="audit sink unavailable"):
+                assignment.revoke(by=world["admin"], reason="test")
+
+            assert seen_during_signal == [False]
+            assert assignment.status == AssignmentStatus.ACTIVE
+            assignment.refresh_from_db()
+            assert assignment.status == AssignmentStatus.ACTIVE
+            assert engine.has_perm(user, "things.view_thing") is True
+    finally:
+        signals.assignment_revoked.disconnect(dispatch_uid=uid)
+
+
+def test_outer_lifecycle_rollback_does_not_leave_request_cache_stale(world):
+    user = world["user"]
+    assignment = ScopeAssignment.objects.get(user=user)
+
+    with request_cache():
+        assert engine.has_perm(user, "things.view_thing") is True
+
+        with pytest.raises(RuntimeError, match="abort outer transaction"), transaction.atomic():
+            assignment.revoke(by=world["admin"], reason="test")
+            assert engine.has_perm(user, "things.view_thing") is False
+            raise RuntimeError("abort outer transaction")
+
+        assignment.refresh_from_db()
+        assert assignment.status == AssignmentStatus.ACTIVE
+        assert engine.has_perm(user, "things.view_thing") is True
+
+
+def test_role_permission_receiver_failure_rolls_back_and_clears_warm_request_cache(world):
+    user = world["user"]
+    role = world["role"]
+    change = world["change"]
+    seen_during_signal = []
+
+    def reject_after_checking_authority(sender, **kwargs):
+        seen_during_signal.append(engine.user_permissions(user))
+        raise RuntimeError("audit sink unavailable")
+
+    uid = "test_role_permission_receiver_failure_rolls_back_and_clears_warm_request_cache"
+    signals.role_permissions_changed.connect(reject_after_checking_authority, weak=False, dispatch_uid=uid)
+    try:
+        with request_cache():
+            assert engine.user_permissions(user) == {"things.view_thing"}
+
+            with pytest.raises(RuntimeError, match="audit sink unavailable"):
+                role.grant_permissions(change, by=world["admin"])
+
+            assert seen_during_signal == [{"things.view_thing", "things.change_thing"}]
+            assert not role.permissions.filter(pk=change.pk).exists()
+            assert engine.user_permissions(user) == {"things.view_thing"}
+    finally:
+        signals.role_permissions_changed.disconnect(dispatch_uid=uid)

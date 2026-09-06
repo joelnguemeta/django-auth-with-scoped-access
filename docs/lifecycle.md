@@ -164,3 +164,18 @@ def log_permission_change(sender, role, added, removed, actor, **kwargs):
         performed_by=actor,
     )
 ```
+
+Lifecycle transitions and role permission changes are executed inside database
+transactions. If a signal receiver raises an exception, the library re-raises
+it and rolls back the authorization mutation. SQL audit rows written by earlier
+receivers on the same database connection roll back with the mutation.
+
+Request-local authorization caches are invalidated before signals are emitted.
+Receivers that call `engine.has_perm()` or `engine.user_permissions()` therefore
+see the pending authority change while the transaction is open, and the cache is
+refreshed from the database after commit or rollback.
+
+For external side effects such as webhooks, message queues, or third-party audit
+sinks, prefer `transaction.on_commit()` or a transactional outbox with idempotent
+consumers. A network call made directly inside a receiver cannot be rolled back
+by the database if a later receiver fails.

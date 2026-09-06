@@ -170,6 +170,7 @@ class AbstractRole(models.Model):
     def _labels(self, perms) -> list[str]:
         return sorted(f"{p.content_type.app_label}.{p.codename}" for p in perms)
 
+    @transaction.atomic
     def grant_permissions(self, *perms, by) -> None:
         from . import engine
         from .role_permissions import managed_role_permission_mutation
@@ -185,11 +186,13 @@ class AbstractRole(models.Model):
         with managed_role_permission_mutation():
             self.permissions.add(*perms)
         if added:
+            cache.invalidate_all()
+            transaction.on_commit(cache.invalidate_all)
             signals.role_permissions_changed.send(
                 sender=type(self), role=self, added=self._labels(added), removed=[], actor=by
             )
-            cache.invalidate_all()
 
+    @transaction.atomic
     def revoke_permissions(self, *perms, by) -> None:
         from . import engine
         from .role_permissions import managed_role_permission_mutation
@@ -200,10 +203,11 @@ class AbstractRole(models.Model):
         with managed_role_permission_mutation():
             self.permissions.remove(*perms)
         if removed:
+            cache.invalidate_all()
+            transaction.on_commit(cache.invalidate_all)
             signals.role_permissions_changed.send(
                 sender=type(self), role=self, added=[], removed=self._labels(removed), actor=by
             )
-            cache.invalidate_all()
 
 
 class Role(AbstractRole):
@@ -371,8 +375,9 @@ class ScopeAssignmentQuerySet(models.QuerySet):
 
         with managed_assignment_mutation():
             assignment = self.create(user=user, role=role, level=level, granted_by=by, **kwargs)
-        signals.assignment_granted.send(sender=self.model, assignment=assignment, actor=by)
         cache.invalidate_user(user.pk)
+        transaction.on_commit(lambda user_pk=user.pk: cache.invalidate_user(user_pk))
+        signals.assignment_granted.send(sender=self.model, assignment=assignment, actor=by)
         return assignment
 
     def create(self, **kwargs):
@@ -528,12 +533,35 @@ class AbstractScopeAssignment(models.Model):
         if not allowed:
             raise AssignmentManagementPermissionError("The actor cannot manage assignments at the assignment's scope.")
 
+    def _snapshot_transition_fields(self) -> dict:
+        return {
+            "status": self.status,
+            "revoked_by": self.revoked_by,
+            "revoked_by_id": self.revoked_by_id,
+            "revoked_at": self.revoked_at,
+            "reason": self.reason,
+        }
+
+    def _restore_transition_fields(self, snapshot: dict) -> None:
+        for field, value in snapshot.items():
+            setattr(self, field, value)
+        if snapshot["revoked_by_id"] is None:
+            self._state.fields_cache.pop("revoked_by", None)
+
+    @transaction.atomic
     def suspend(self, *, by=None, reason: str = "") -> None:
         self._authorize_transition(by)
+        snapshot = self._snapshot_transition_fields()
         self._transition(target=AssignmentStatus.SUSPENDED, allowed_from=(AssignmentStatus.ACTIVE,))
-        signals.assignment_suspended.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
+        transaction.on_commit(lambda user_pk=self.user_id: cache.invalidate_user(user_pk))
+        try:
+            signals.assignment_suspended.send(sender=type(self), assignment=self, actor=by, reason=reason)
+        except Exception:
+            self._restore_transition_fields(snapshot)
+            raise
 
+    @transaction.atomic
     def reactivate(self, *, by=None, reason: str = "") -> None:
         self._authorize_transition(by)
         persisted_status = type(self)._base_manager.filter(pk=self.pk).values_list("status", flat=True).first()
@@ -546,12 +574,20 @@ class AbstractScopeAssignment(models.Model):
         scope = self.scope if self.scope_id is not None else None
         if not engine.can_assign_role(by, self.role, self.level, scope):
             raise RoleAssignmentError("The actor cannot delegate this role at the target scope.")
+        snapshot = self._snapshot_transition_fields()
         self._transition(target=AssignmentStatus.ACTIVE, allowed_from=(AssignmentStatus.SUSPENDED,))
-        signals.assignment_reactivated.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
+        transaction.on_commit(lambda user_pk=self.user_id: cache.invalidate_user(user_pk))
+        try:
+            signals.assignment_reactivated.send(sender=type(self), assignment=self, actor=by, reason=reason)
+        except Exception:
+            self._restore_transition_fields(snapshot)
+            raise
 
+    @transaction.atomic
     def revoke(self, *, by=None, reason: str = "") -> None:
         self._authorize_transition(by)
+        snapshot = self._snapshot_transition_fields()
         self._transition(
             target=AssignmentStatus.REVOKED,
             allowed_from=(AssignmentStatus.ACTIVE, AssignmentStatus.SUSPENDED),
@@ -559,8 +595,13 @@ class AbstractScopeAssignment(models.Model):
             revoked_at=timezone.now(),
             reason=reason,
         )
-        signals.assignment_revoked.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)
+        transaction.on_commit(lambda user_pk=self.user_id: cache.invalidate_user(user_pk))
+        try:
+            signals.assignment_revoked.send(sender=type(self), assignment=self, actor=by, reason=reason)
+        except Exception:
+            self._restore_transition_fields(snapshot)
+            raise
 
 
 class ScopeAssignment(AbstractScopeAssignment):

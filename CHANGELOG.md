@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - **Role & Permission ORM Mutation Guards**: Guard `RolePermissionQuerySet.update()` and `bulk_update()` against actor-less mutations through public managers and related managers (`role.role_permissions`, `permission.scoped_role_permissions`). Additionally guard `RoleQuerySet.bulk_update()` and `ScopeAssignmentQuerySet.bulk_update()` to prevent bypassing `RoleService` and lifecycle state machines (#16).
 - **Assignment Reactivation Anti-Escalation**: Enforce Rule **R7** anti-escalation (`can_assign_role`) when reactivating suspended role assignments (`reactivate()`). Prevents managers from restoring suspended assignments containing permissions they do not effectively hold at the target scope (#15).
+- **Lifecycle Signal Consistency**: Make assignment lifecycle transitions and role permission changes transactional, invalidate request caches before emitting signals, and avoid serving memoized authorization decisions after transactional authority changes (#17).
 
 ### Fixed
 - **DRF Dynamic Permissions**: Enforce permission-aware scoping in `ScopeQuerySetMixin` and `ScopeWriteGuardMixin` when permissions are provided dynamically via `get_permissions()`, preserving custom `perms_map` configurations and preventing recursion or premature token consumption (#14).

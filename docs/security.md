@@ -56,6 +56,8 @@ The library also cannot protect endpoints that omit its permission checks, query
   1. `AbstractScopeAssignment.delete()` raises `AssignmentDeletionError`. Assignments must be terminated via `.revoke()`.
   2. Direct mutations without managed context tokens (`managed_assignment_mutation()`) raise `DirectAssignmentMutationError`. `ScopeAssignmentQuerySet.update()` and `bulk_update()` reject changes to status and immutable fields.
   3. Transitions between `ACTIVE`, `SUSPENDED`, and `REVOKED` are guarded by atomic SQL conditional updates.
+  4. Lifecycle signals run inside the mutation transaction. Receiver failures roll back the authorization mutation and same-database audit writes.
+  5. Request-local authorization caches are invalidated before lifecycle and role-permission signals, and are not reused after transactional authority changes until refreshed from the database.
 
 These are application guardrails, not a sandbox against hostile in-process Python or direct database access. Revoke `DELETE` from the production runtime database role as described below when immutable assignment history is required.
 
@@ -162,3 +164,4 @@ Database permissions reduce the impact of raw SQL executed with the runtime cred
 - Never place `X-ReAuth-Token` values, passwords, or verifier proofs in logs, traces, analytics, or error reports.
 - Restrict access to the shared cache and isolate its keyspace from untrusted applications.
 - Monitor ReAuth failure signals, role changes, assignment lifecycle events, system-check failures, and unexpected database permission errors.
+- For audit or notification receivers that call external systems, use `transaction.on_commit()` or a transactional outbox with idempotent consumers. Database rollback cannot undo an HTTP request or message already sent by a receiver.

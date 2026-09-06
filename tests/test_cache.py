@@ -74,3 +74,21 @@ def test_lifecycle_apis_invalidate_within_request(world):
         assignment = ScopeAssignment.objects.filter(user=user).first()
         assignment.revoke(by=world["admin"], reason="test")
         assert engine.user_permissions(user) == set()
+
+
+def test_assignment_reactivate_invalidates_request_cache(world):
+    user = world["user"]
+    assignment = ScopeAssignment.objects.filter(user=user).first()
+    assignment.suspend(by=world["admin"])
+
+    with request_cache():
+        # Initialize cache while suspended
+        assert engine.user_permissions(user) == set()
+        assert engine.has_perm(user, "things.view_thing") is False
+
+        # Reactivate assignment
+        assignment.reactivate(by=world["admin"])
+
+        # Permission becomes immediately effective in the same request
+        assert engine.user_permissions(user) == {"things.view_thing"}
+        assert engine.has_perm(user, "things.view_thing") is True

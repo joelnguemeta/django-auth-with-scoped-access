@@ -504,16 +504,32 @@ def test_assignment_reactivate_respects_explicit_grant_policies(world, settings)
     assert assign_1.status == AssignmentStatus.ACTIVE
     assign_1.suspend(by=world["admin"])
 
-    # 2. Policy list: allow perm1, forbid perm2
+    # 2. Policy list: allow perm1, forbid perm2; multi-permission role requires ALL permissions
+    role_multi = RoleService.create(by=world["admin"], name="role multi", permissions=[perm1, perm2])
+    assign_multi = ScopeAssignment.objects.grant(
+        user=world["user"], role=role_multi, scope=world["org"], by=world["admin"]
+    )
+    assign_multi.suspend(by=world["admin"])
+
     settings.SCOPED_ACCESS = {**SCOPED_ACCESS_ORG, "GRANTABLE_PERMISSIONS": ["things.perm_one"]}
-    assign_1.reactivate(by=manager)  # positive
+    assign_1.reactivate(by=manager)  # positive: perm_one allowed
     assert assign_1.status == AssignmentStatus.ACTIVE
 
-    with pytest.raises(RoleAssignmentError):  # negative
+    with pytest.raises(RoleAssignmentError):  # negative: perm_two forbidden
         assign_2.reactivate(by=manager)
     assert assign_2.status == AssignmentStatus.SUSPENDED
 
-    # 3. Policy callable: custom decision
+    with pytest.raises(RoleAssignmentError):  # negative: role_multi has perm2 which is forbidden
+        assign_multi.reactivate(by=manager)
+    assert assign_multi.status == AssignmentStatus.SUSPENDED
+
+    # Policy list containing both permissions allows reactivating role_multi
+    settings.SCOPED_ACCESS = {**SCOPED_ACCESS_ORG, "GRANTABLE_PERMISSIONS": ["things.perm_one", "things.perm_two"]}
+    assign_multi.reactivate(by=manager)
+    assert assign_multi.status == AssignmentStatus.ACTIVE
+    assign_multi.suspend(by=world["admin"])
+
+    # 3. Policy callable: custom decision across all permissions of the role
     settings.SCOPED_ACCESS = {
         **SCOPED_ACCESS_ORG,
         "GRANTABLE_PERMISSIONS": lambda actor, role, permission, at=None: permission == "things.perm_one",
@@ -525,6 +541,44 @@ def test_assignment_reactivate_respects_explicit_grant_policies(world, settings)
     with pytest.raises(RoleAssignmentError):  # negative: perm_two rejected
         assign_2.reactivate(by=manager)
     assert assign_2.status == AssignmentStatus.SUSPENDED
+
+    with pytest.raises(RoleAssignmentError):  # negative: role_multi contains rejected perm_two
+        assign_multi.reactivate(by=manager)
+    assert assign_multi.status == AssignmentStatus.SUSPENDED
+
+
+def test_revoked_assignment_reactivate_raises_invalid_transition_before_r7(world):
+    """Exception priority: A REVOKED assignment raises InvalidAssignmentTransitionError, not RoleAssignmentError."""
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access",
+        codename="manage_assignments",
+    )
+    ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
+    delete = Permission.objects.create(content_type=ct, codename="delete_thing_priority", name="dp")
+
+    manager = get_user_model().objects.create(username="priority_manager")
+    manager_role = RoleService.create(by=world["admin"], name="priority manager role")
+    manager_role.grant_permissions(manage_assignments, by=world["admin"])
+    ScopeAssignment.objects.grant(user=manager, role=manager_role, scope=world["org"], by=world["admin"])
+
+    privileged_role = RoleService.create(by=world["admin"], name="privileged priority role", permissions=[delete])
+    assignment = ScopeAssignment.objects.grant(
+        user=world["user"], role=privileged_role, scope=world["org"], by=world["admin"]
+    )
+    assignment.revoke(by=world["admin"], reason="terminal")
+
+    # Manager does NOT hold delete permission, but assignment is REVOKED
+    # Must raise InvalidAssignmentTransitionError, NOT RoleAssignmentError
+    with pytest.raises(InvalidAssignmentTransitionError, match="Cannot transition assignment from REVOKED to ACTIVE"):
+        assignment.reactivate(by=manager)
+
+    # Even if in-memory status was tampered with, persisted state in DB takes priority
+    assignment.status = AssignmentStatus.SUSPENDED
+    with pytest.raises(InvalidAssignmentTransitionError, match="Cannot transition assignment from REVOKED to ACTIVE"):
+        assignment.reactivate(by=manager)
+
+    assignment.refresh_from_db()
+    assert assignment.status == AssignmentStatus.REVOKED
 
 
 def test_suspend_and_revoke_do_not_require_holding_role_permissions(world):

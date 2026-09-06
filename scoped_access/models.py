@@ -33,6 +33,7 @@ from .exceptions import (
     AssignmentScopeError,
     DirectAssignmentMutationError,
     DirectRoleMutationError,
+    DirectRolePermissionMutationError,
     InvalidAssignmentTransitionError,
     RoleAssignmentError,
     RoleManagementPermissionError,
@@ -63,6 +64,13 @@ class RoleQuerySet(models.QuerySet):
         if not role_mutation_is_managed():
             raise DirectRoleMutationError("Use RoleService.update(..., by=actor).")
         return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, **kwargs):
+        from .mutations import role_mutation_is_managed
+
+        if not role_mutation_is_managed():
+            raise DirectRoleMutationError("Bulk role updates must run through an explicit trusted import.")
+        return super().bulk_update(objs, fields, **kwargs)
 
     def delete(self):
         from .mutations import role_mutation_is_managed
@@ -225,7 +233,7 @@ class RolePermissionQuerySet(models.QuerySet):
         from .role_permissions import role_permission_mutation_is_managed
 
         if not role_permission_mutation_is_managed():
-            raise DirectRoleMutationError(
+            raise DirectRolePermissionMutationError(
                 "Use role.grant_permissions(..., by=actor) or role.revoke_permissions(..., by=actor)."
             )
 
@@ -236,6 +244,14 @@ class RolePermissionQuerySet(models.QuerySet):
     def bulk_create(self, objs, **kwargs):
         self._assert_managed()
         return super().bulk_create(objs, **kwargs)
+
+    def update(self, **kwargs):
+        self._assert_managed()
+        return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, **kwargs):
+        self._assert_managed()
+        return super().bulk_update(objs, fields, **kwargs)
 
     def delete(self):
         self._assert_managed()
@@ -256,14 +272,14 @@ class RolePermission(models.Model):
         from .role_permissions import role_permission_mutation_is_managed
 
         if not role_permission_mutation_is_managed():
-            raise DirectRoleMutationError("Use the actor-aware role permission methods.")
+            raise DirectRolePermissionMutationError("Use the actor-aware role permission methods.")
         return super().save(*args, **kwargs)
 
     def delete(self, using=None, keep_parents=False):
         from .role_permissions import role_permission_mutation_is_managed
 
         if not role_permission_mutation_is_managed():
-            raise DirectRoleMutationError("Use the actor-aware role permission methods.")
+            raise DirectRolePermissionMutationError("Use the actor-aware role permission methods.")
         return super().delete(using=using, keep_parents=keep_parents)
 
 
@@ -382,6 +398,17 @@ class ScopeAssignmentQuerySet(models.QuerySet):
         if _IMMUTABLE_ASSIGNMENT_FIELDS.intersection(kwargs):
             raise DirectAssignmentMutationError("Assignment identity and scope are immutable after creation.")
         return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, **kwargs):
+        """Prevent bulk updates from bypassing the lifecycle state machine."""
+        fields_set = set(fields)
+        if "status" in fields_set:
+            raise InvalidAssignmentTransitionError(
+                "Assignment status must be changed through suspend(), reactivate(), or revoke()."
+            )
+        if _IMMUTABLE_ASSIGNMENT_FIELDS.intersection(fields_set):
+            raise DirectAssignmentMutationError("Assignment identity and scope are immutable after creation.")
+        return super().bulk_update(objs, fields, **kwargs)
 
     def delete(self):
         """Assignment rows are an audit trail and cannot be hard-deleted."""

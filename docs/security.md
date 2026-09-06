@@ -46,6 +46,7 @@ The library also cannot protect endpoints that omit its permission checks, query
 - **Defenses**:
   1. When `GRANTABLE_PERMISSIONS = "self"`, `can_grant_permission()` enforces that an actor cannot add any permission to a role unless the actor holds that permission effectively at the role's owner scope.
   2. Custom roles cannot be assigned at root scope or outside their owner's subtree (Rule R2).
+  3. Direct ORM mutations (`Role.objects.create()`, `.update()`, `.bulk_update()`, `RolePermission.objects.update()`, `.bulk_update()`, and related managers) are blocked by public manager guardrails to ensure all role modifications pass through actor-aware APIs.
 
 ---
 
@@ -53,7 +54,7 @@ The library also cannot protect endpoints that omit its permission checks, query
 - **Attack**: An application bug or exposed endpoint attempts to hard-delete or bulk-modify assignments through the normal ORM surface (`ScopeAssignment.objects.filter(...).delete()`).
 - **Defenses**:
   1. `AbstractScopeAssignment.delete()` raises `AssignmentDeletionError`. Assignments must be terminated via `.revoke()`.
-  2. Direct mutations without managed context tokens (`managed_assignment_mutation()`) raise `DirectAssignmentMutationError`.
+  2. Direct mutations without managed context tokens (`managed_assignment_mutation()`) raise `DirectAssignmentMutationError`. `ScopeAssignmentQuerySet.update()` and `bulk_update()` reject changes to status and immutable fields.
   3. Transitions between `ACTIVE`, `SUSPENDED`, and `REVOKED` are guarded by atomic SQL conditional updates.
 
 These are application guardrails, not a sandbox against hostile in-process Python or direct database access. Revoke `DELETE` from the production runtime database role as described below when immutable assignment history is required.

@@ -22,10 +22,6 @@ class RoleOwnershipError(ValueError):
     """Raised when a custom role has an invalid owner or owner level."""
 
 
-class DirectRolePermissionMutationError(RuntimeError):
-    """Raised when role permissions bypass the actor-aware role API."""
-
-
 class AssignmentScopeError(ValueError):
     """Raised when an assignment's level and scope node are inconsistent."""
 
@@ -36,6 +32,10 @@ class AssignmentManagementPermissionError(PermissionError):
 
 class DirectRoleMutationError(RuntimeError):
     """Raised when role persistence bypasses RoleService."""
+
+
+class DirectRolePermissionMutationError(DirectRoleMutationError):
+    """Raised when role permissions bypass the actor-aware role API."""
 
 
 class DirectAssignmentMutationError(RuntimeError):

@@ -18,7 +18,7 @@ re-exported here — the core must import without any web framework installed.
 
 from importlib import import_module
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     "ReAuthService",

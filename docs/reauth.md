@@ -42,9 +42,13 @@ SCOPED_ACCESS = {
     "REAUTH": {
         "ENABLED": True,
         "TTL": 300,  # 5 minutes
+        "RATE": "5/minute",  # Per authenticated user
     }
 }
 ```
+
+`ReAuthView` applies this dedicated throttle automatically. Add an independent
+source-IP limit at the reverse proxy or API gateway as defense in depth.
 
 ---
 

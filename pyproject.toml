@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-scoped-access"
-version = "0.1.1"
+version = "0.2.0"
 description = "RBAC + hierarchical scope-based authorization (ABAC) + step-up re-authentication for Django. Reference implementation of the Scoped Access specification."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -42,7 +42,7 @@ dependencies = ["Django>=4.2"]
 
 [project.urls]
 Homepage = "https://github.com/joelnguemeta/django-auth-with-scoped-access"
-Documentation = "https://django-scoped-access.readthedocs.io/"
+Documentation = "https://django-auth-with-scoped-access.readthedocs.io/"
 Repository = "https://github.com/joelnguemeta/django-auth-with-scoped-access"
 Issues = "https://github.com/joelnguemeta/django-auth-with-scoped-access/issues"
 Changelog = "https://github.com/joelnguemeta/django-auth-with-scoped-access/blob/main/CHANGELOG.md"

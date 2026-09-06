@@ -17,7 +17,7 @@ def test_root_all_matches_lazy_map():
 
 
 def test_package_version():
-    assert scoped_access.__version__ == "0.1.1"
+    assert scoped_access.__version__ == "0.2.0"
 
 
 def test_root_names_resolve():

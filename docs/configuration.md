@@ -31,6 +31,7 @@ SCOPED_ACCESS = {
     "REAUTH": {
         "ENABLED": True,
         "TTL": 300,  # Token validity in seconds (default: 300)
+        "RATE": "5/minute",  # Credential attempts per authenticated user
     },
 }
 
@@ -95,7 +96,7 @@ Defines the anti-escalation policy when creating or modifying roles:
 
 ### `REAUTH` (Optional)
 **Type**: `dict`  
-**Default**: `{"ENABLED": False, "TTL": 300}`
+**Default**: `{"ENABLED": False, "TTL": 300, "RATE": "5/minute"}`
 
 Configuration for the Step-Up Re-Authentication subsystem:
 
@@ -103,6 +104,7 @@ Configuration for the Step-Up Re-Authentication subsystem:
 |---|---|:---:|---|
 | `ENABLED` | `bool` | `False` | Whether step-up re-authentication checks are enforced. |
 | `TTL` | `int` | `300` | Lifetime of a single-use re-authentication token in seconds. |
+| `RATE` | `str` | `"5/minute"` | DRF throttle rate for proof attempts, per authenticated user. |
 
 ---
 
@@ -154,4 +156,5 @@ Django Scoped Access automatically validates your configuration during `manage.p
 | `scoped_access.E010` | Error | `REAUTH.TTL` must be a positive integer. |
 | `scoped_access.E011` | Error | `STRICT_REGISTRATION` is not a boolean. |
 | `scoped_access.E012` | Error | Strict mode found an unregistered host model. |
+| `scoped_access.E013` | Error | `REAUTH.RATE` is not a DRF rate string such as `5/minute`. |
 | `scoped_access.W001` | Warning | `REAUTH` is enabled but the default Django cache is not shared (`LocMemCache`/`DummyCache`). |

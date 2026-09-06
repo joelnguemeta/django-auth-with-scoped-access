@@ -27,6 +27,13 @@ class ScopedModelPermission(DjangoModelPermissions):
         "DELETE": ["%(app_label)s.delete_%(model_name)s"],
     }
 
+    def has_object_permission(self, request, view, obj) -> bool:
+        """Bind the HTTP permission and scope decision to one assignment."""
+        permissions = self.get_required_permissions(request.method, type(obj))
+        if all(engine.has_perm(request.user, permission, obj) for permission in permissions):
+            return True
+        raise PermissionDenied({"detail": "You do not have this permission in the object's scope."})
+
 
 class ScopeObjectPermission(BasePermission):
     """Object-level scope check (SPEC §4.2) — pair with ScopedModelPermission."""

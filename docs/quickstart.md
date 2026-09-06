@@ -96,6 +96,7 @@ SCOPED_ACCESS = {
     "REAUTH": {
         "ENABLED": True,
         "TTL": 300,  # 5 minutes
+        "RATE": "5/minute",
     },
 }
 ```

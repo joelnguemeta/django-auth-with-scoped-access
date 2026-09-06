@@ -145,6 +145,7 @@ Normative rules:
 - **R4 — Delegated management:** creating/editing/deleting a custom role owned by X requires the `roles.manage_roles` permission effective on a scope covering X. System roles require `roles.manage_global_roles` (or superuser).
 - **R5 — Anti-escalation:** when `grantable_permissions = "self"` (default), an actor MUST NOT add to any role a permission the actor does not themself hold effectively at the role's owner scope (at global scope for system roles). Superusers are exempt. `"any"` disables the rule; an explicit list restricts grantable permissions to that list.
 - **R6 — Change amplification:** modifying a role's permission set changes the rights of every assignee; it MUST emit `role.permissions_changed` ([§9](#9-events)).
+- **R7 — Assignment anti-escalation:** when `grantable_permissions = "self"` (default), an actor MUST NOT assign a role containing a permission the actor does not hold effectively at the assignment's target scope. Superusers are exempt. The `"any"`, explicit-list, and callable policies have the same opt-out/allow-list semantics as R5.
 
 ---
 

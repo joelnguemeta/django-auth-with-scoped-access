@@ -276,6 +276,26 @@ def test_lifecycle_events_emitted_with_actor(world):
     assert assignment.granted_by == world["admin"]
 
 
+def test_assignment_grant_rolls_back_when_lifecycle_receiver_fails(world):
+    def reject_audit_event(sender, **kwargs):
+        raise RuntimeError("audit sink unavailable")
+
+    uid = "test_assignment_grant_rolls_back"
+    signals.assignment_granted.connect(reject_audit_event, weak=False, dispatch_uid=uid)
+    try:
+        with pytest.raises(RuntimeError, match="audit sink unavailable"):
+            ScopeAssignment.objects.grant(
+                user=world["user"],
+                role=world["role"],
+                scope=world["org"],
+                by=world["admin"],
+            )
+    finally:
+        signals.assignment_granted.disconnect(dispatch_uid=uid)
+
+    assert not ScopeAssignment.objects.filter(user=world["user"], role=world["role"]).exists()
+
+
 def test_role_permission_changes_emit_added_and_removed(world):
     ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
     view = Permission.objects.create(content_type=ct, codename="view_thing", name="v")

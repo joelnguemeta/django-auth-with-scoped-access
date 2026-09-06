@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+## [0.2.0] - 2026-09-05
+
+### Added
+- **DRF Scoped ViewSets**: `ScopedModelViewSet` and `ScopedReadOnlyModelViewSet` integrating `ScopedModelPermission`, `ScopeObjectPermission`, `ScopeQuerySetMixin`, and `ScopeWriteGuardMixin` out of the box.
+- **Strict Resource Registration Mode**: `strict=True` on `register()` to enforce explicit parent relations and fail early on misconfigurations.
+
+### Security
+- Bind DRF method permissions and scope coverage to the same effective assignment for list, detail, create, and update operations.
+- Prevent assignment managers from assigning roles whose permissions exceed their effective authority at the target scope.
+- Make assignment grants transactional so signal failures cannot leave partially completed lifecycle operations.
+- Apply a dedicated per-user throttle to the ReAuth credential endpoint, defaulting to `5/minute`.
+- Atomically consume ReAuth tokens to prevent token reuse and race conditions.
+
 ## [0.1.1] - 2026-08-21
 
 ### Added

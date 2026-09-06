@@ -9,12 +9,14 @@ except ImportError as exc:
 
 from .mixins import ScopeQuerySetMixin, ScopeWriteGuardMixin
 from .permissions import RequireReAuth, ScopedModelPermission, ScopeObjectPermission
+from .throttling import ReAuthRateThrottle
 from .views import MeAccessView, ReAuthView
 from .viewsets import ScopedModelViewSet, ScopedReadOnlyModelViewSet
 
 __all__ = [
     "MeAccessView",
     "ReAuthView",
+    "ReAuthRateThrottle",
     "RequireReAuth",
     "ScopeObjectPermission",
     "ScopeQuerySetMixin",

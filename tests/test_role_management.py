@@ -153,6 +153,42 @@ def test_assignment_grant_requires_manage_assignments_at_target_scope(role_world
         ScopeAssignment.objects.grant(user=role_world["outsider"], role=role, by=role_world["manager"])
 
 
+def test_assignment_manager_cannot_delegate_permissions_they_do_not_hold(role_world):
+    dangerous_role = RoleService.create(
+        by=role_world["bootstrap"],
+        name="dangerous system role",
+        permissions=[role_world["delete"]],
+    )
+
+    with pytest.raises(RoleAssignmentError, match="cannot delegate this role"):
+        ScopeAssignment.objects.grant(
+            user=role_world["manager"],
+            role=dangerous_role,
+            scope=role_world["org_a"],
+            by=role_world["manager"],
+        )
+
+    assert not engine.has_perm(role_world["manager"], "things.delete_thing", role_world["org_a"])
+
+
+def test_assignment_manager_can_delegate_permissions_they_hold_at_target(role_world):
+    permitted_role = RoleService.create(
+        by=role_world["bootstrap"],
+        name="permitted system role",
+        permissions=[role_world["view"]],
+    )
+
+    assignment = ScopeAssignment.objects.grant(
+        user=role_world["outsider"],
+        role=permitted_role,
+        scope=role_world["org_a"],
+        by=role_world["manager"],
+    )
+
+    assert assignment.role == permitted_role
+    assert engine.has_perm(role_world["outsider"], "things.view_thing", role_world["org_a"])
+
+
 def test_role_owner_level_must_be_allowed(role_world, settings):
     settings.SCOPED_ACCESS = {**SCOPED_ACCESS_ORG, "ROLE_OWNER_LEVELS": []}
 

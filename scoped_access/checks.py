@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from django.apps import apps
 from django.conf import settings
 from django.core import checks
@@ -135,6 +137,15 @@ def check_scoped_access_config(app_configs, **kwargs):
                 checks.Error(
                     "SCOPED_ACCESS: REAUTH.TTL must be a positive integer.",
                     id="scoped_access.E010",
+                )
+            )
+
+        rate = reauth.get("RATE", "5/minute")
+        if not isinstance(rate, str) or re.fullmatch(r"[1-9]\d*/[smhd][A-Za-z]*", rate) is None:
+            errors.append(
+                checks.Error(
+                    "SCOPED_ACCESS: REAUTH.RATE must be a DRF rate string such as '5/minute'.",
+                    id="scoped_access.E013",
                 )
             )
 

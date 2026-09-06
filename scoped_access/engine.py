@@ -310,7 +310,7 @@ def _rank_or_none(hierarchy, assignment) -> int | None:
         return None
 
 
-def accessible_nodes(user, level_name: str, at=None):
+def accessible_nodes(user, level_name: str, at=None, permission: str | None = None):
     """QuerySet of nodes at `level_name` the user's assignments reach."""
     cfg = get_config()
     level = cfg.hierarchy.level(level_name)
@@ -324,6 +324,8 @@ def accessible_nodes(user, level_name: str, at=None):
     q = Q(pk__in=[])
     for a in effective_assignments(user, at):
         if not _assignment_is_valid(a):
+            continue
+        if permission is not None and permission not in _role_perms(a.role):
             continue
         if a.is_root_scope:
             return qs
@@ -349,7 +351,7 @@ def _anchor_target_levels(model):
     return [(cfg.hierarchy.rank(lvl.name), lvl) for lvl in cfg.hierarchy.levels_for_model(current)]
 
 
-def _hierarchy_node_filter_q(user, model, at=None) -> Q | None:
+def _hierarchy_node_filter_q(user, model, at=None, permission: str | None = None) -> Q | None:
     """Return the union of accessible levels when `model` stores hierarchy nodes."""
     levels = get_config().hierarchy.levels_for_model(model)
     if not levels:
@@ -357,32 +359,41 @@ def _hierarchy_node_filter_q(user, model, at=None) -> Q | None:
 
     q = Q(pk__in=[])
     for level in levels:
-        q |= Q(pk__in=accessible_nodes(user, level.name, at).values("pk"))
+        q |= Q(pk__in=accessible_nodes(user, level.name, at, permission=permission).values("pk"))
     return q
 
 
-def scope_filter_q(user, model, at=None) -> Q:
-    """Q filter restricting a hierarchy node or registered resource model."""
+def scope_filter_q(user, model, at=None, permission: str | None = None) -> Q:
+    """Q filter restricting resources by scope and, optionally, permission.
+
+    When ``permission`` is provided, an assignment contributes to the filter
+    only when its role contains that permission. This prevents a permission
+    held in one tenant from being combined with unrelated scope coverage in
+    another tenant.
+    """
     if not user.is_active:
         return Q(pk__in=[])
-    node_filter = _hierarchy_node_filter_q(user, model, at)
+    node_filter = _hierarchy_node_filter_q(user, model, at, permission)
     if node_filter is not None:
         return node_filter
     if user.is_superuser:
         return Q()
     if resources.is_global(model):
-        return Q()
+        return Q() if permission is None or permission in user_permissions(user, at=at) else Q(pk__in=[])
     anchor = resources.anchor_for(model)
     if anchor is None:
         if get_config().strict_registration:
             return Q(pk__in=[])
-        return Q()  # legacy: unregistered resources are global
+        # Legacy unregistered resources are global, but still require RBAC.
+        return Q() if permission is None or permission in user_permissions(user, at=at) else Q(pk__in=[])
 
     cfg = get_config()
     target_levels = _anchor_target_levels(model)
     q = Q(pk__in=[])
     for a in effective_assignments(user, at):
         if not _assignment_is_valid(a):
+            continue
+        if permission is not None and permission not in _role_perms(a.role):
             continue
         if a.is_root_scope:
             return Q()
@@ -398,8 +409,8 @@ def scope_filter_q(user, model, at=None) -> Q:
     return q
 
 
-def visible_resources(user, model, at=None):
-    return model._default_manager.filter(scope_filter_q(user, model, at)).distinct()
+def visible_resources(user, model, at=None, permission: str | None = None):
+    return model._default_manager.filter(scope_filter_q(user, model, at, permission=permission)).distinct()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -505,3 +516,38 @@ def can_manage_assignment(actor, node=None, at=None) -> bool:
         _assignment_is_valid(assignment) and assignment.is_root_scope and permission in _role_perms(assignment.role)
         for assignment in effective_assignments(actor, at)
     )
+
+
+def can_assign_role(actor, role, level_name: str | None, node=None, at=None) -> bool:
+    """Prevent assignment managers from delegating authority they lack.
+
+    ``manage_assignments`` authorizes the lifecycle operation; it does not by
+    itself authorize every role in the catalog. Under the default ``self``
+    policy, every permission in the assigned role must be effective for the
+    actor at the target scope. Explicit grant policies retain their documented
+    opt-out/allow-list semantics.
+    """
+    if actor is None or not actor.is_active or not role_assignable(role, level_name, node):
+        return False
+    if actor.is_superuser:
+        return True
+    if not role_visible(actor, role, at):
+        return False
+
+    role_permissions = _role_perms(role)
+    policy = get_config().grantable_permissions
+    if policy == "any":
+        return True
+    if isinstance(policy, (list, tuple, set)):
+        return role_permissions <= set(policy)
+    if callable(policy):
+        return all(policy(actor=actor, role=role, permission=permission, at=at) for permission in role_permissions)
+
+    if node is None:
+        held = set()
+        for assignment in effective_assignments(actor, at):
+            if _assignment_is_valid(assignment) and assignment.is_root_scope:
+                held |= _role_perms(assignment.role)
+    else:
+        held = user_permissions(actor, node, at)
+    return role_permissions <= held

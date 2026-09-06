@@ -11,8 +11,22 @@ from rest_framework.exceptions import PermissionDenied
 from .. import engine
 
 
+def _required_scoped_permissions(request, view, model) -> tuple[str, ...]:
+    """Return method permissions when the ViewSet uses ScopedModelPermission."""
+    from .permissions import ScopedModelPermission
+
+    for permission in getattr(view, "permission_classes", ()):
+        permission_class = permission if isinstance(permission, type) else type(permission)
+        if issubclass(permission_class, ScopedModelPermission):
+            return tuple(permission_class().get_required_permissions(request.method, model))
+    return ()
+
+
 class ScopeQuerySetMixin:
     """Filters list responses to the caller's scope, at the database level.
+
+    When paired with ``ScopedModelPermission``, only assignments containing
+    the HTTP method's permission contribute to the filtered queryset.
 
     Add as FIRST parent of a ViewSet whose model is registered in the
     resource registry (or is itself a hierarchy node model)::
@@ -33,7 +47,14 @@ class ScopeQuerySetMixin:
         qs = super().get_queryset()
         if not (self.scope_filter_all_actions or getattr(self, "action", None) == "list"):
             return qs
-        return qs.filter(engine.scope_filter_q(self.request.user, qs.model)).distinct()
+        permissions = _required_scoped_permissions(self.request, self, qs.model)
+        if permissions:
+            filters = engine.scope_filter_q(self.request.user, qs.model, permission=permissions[0])
+            for permission in permissions[1:]:
+                filters &= engine.scope_filter_q(self.request.user, qs.model, permission=permission)
+        else:
+            filters = engine.scope_filter_q(self.request.user, qs.model)
+        return qs.filter(filters).distinct()
 
     def _warn_if_detail_routes_are_unprotected(self) -> None:
         """Warn when detail routes have neither filtering nor a scope gate."""
@@ -42,11 +63,11 @@ class ScopeQuerySetMixin:
 
         # Import lazily to keep the mixins module independent from the
         # permissions module during package initialization.
-        from .permissions import ScopeObjectPermission
+        from .permissions import ScopedModelPermission, ScopeObjectPermission
 
         permission_classes = getattr(self, "permission_classes", ())
         if any(
-            isinstance(permission, type) and issubclass(permission, ScopeObjectPermission)
+            isinstance(permission, type) and issubclass(permission, (ScopedModelPermission, ScopeObjectPermission))
             for permission in permission_classes
         ):
             return
@@ -102,5 +123,12 @@ class ScopeWriteGuardMixin:
         super().perform_update(serializer)
 
     def _assert_target_scope(self, serializer) -> None:
-        if not engine.user_covers(self.request.user, _apply_payload(serializer)):
+        candidate = _apply_payload(serializer)
+        permissions = _required_scoped_permissions(self.request, self, serializer.Meta.model)
+        allowed = (
+            all(engine.has_perm(self.request.user, permission, candidate) for permission in permissions)
+            if permissions
+            else engine.user_covers(self.request.user, candidate)
+        )
+        if not allowed:
             raise PermissionDenied({"detail": "Target scope is outside your scope."})

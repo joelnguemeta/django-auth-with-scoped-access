@@ -73,29 +73,20 @@ These are application guardrails, not a sandbox against hostile in-process Pytho
 ## 3. Production Security Checklist
 
 ### 1. Configure Throttling on ReAuth Endpoint
-Protect `POST /api/auth/reauth/` against brute-force attacks with a dedicated, authenticated-user throttle. Defining a rate alone is insufficient; the endpoint must also attach a throttle using that scope:
+`ReAuthView` applies a dedicated authenticated-user throttle. Configure its rate in `SCOPED_ACCESS`:
 
 ```python
 # settings.py
-REST_FRAMEWORK = {
-    "DEFAULT_THROTTLE_RATES": {
-        "scoped_access_reauth": "5/minute",
+SCOPED_ACCESS = {
+    "REAUTH": {
+        "ENABLED": True,
+        "TTL": 300,
+        "RATE": "5/minute",
     },
 }
 ```
 
-```python
-# views.py
-from rest_framework.throttling import ScopedRateThrottle
-from scoped_access.drf import ReAuthView
-
-
-class ThrottledReAuthView(ReAuthView):
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "scoped_access_reauth"
-```
-
-Also rate-limit by source IP at the reverse proxy or API gateway. DRF's built-in throttles are useful application controls, but they are not a denial-of-service defense and may allow short bursts.
+Also rate-limit by source IP at the reverse proxy or API gateway. Application throttling is an application-level control and not a denial-of-service boundary against distributed attacks.
 
 ---
 

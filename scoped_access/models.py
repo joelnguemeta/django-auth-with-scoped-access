@@ -17,7 +17,7 @@ from __future__ import annotations
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from . import cache, signals
@@ -305,6 +305,7 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             models.Q(valid_until__isnull=True) | models.Q(valid_until__gt=at),
         )
 
+    @transaction.atomic
     def grant(self, *, user, role, by, level=None, scope=None, **kwargs):
         """Create an assignment and emit assignment_granted (§9)."""
         unsupported = set(kwargs) - {"valid_from", "valid_until"}
@@ -348,6 +349,8 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             raise RoleAssignmentError("A custom role can only be assigned inside its owner's subtree.")
         if not engine.can_manage_assignment(by, scope):
             raise AssignmentManagementPermissionError("The actor cannot manage assignments at the target scope.")
+        if not engine.can_assign_role(by, role, level, scope):
+            raise RoleAssignmentError("The actor cannot delegate this role at the target scope.")
         from .mutations import managed_assignment_mutation
 
         with managed_assignment_mutation():

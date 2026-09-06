@@ -1,7 +1,7 @@
 site_name: Django Scoped Access
 site_description: RBAC + Hierarchical ABAC + Step-up Re-Authentication for Django
 site_author: Joel Edmond Nguemeta
-site_url: https://django-scoped-access.readthedocs.io/
+site_url: https://django-auth-with-scoped-access.readthedocs.io/
 repo_url: https://github.com/joelnguemeta/django-auth-with-scoped-access
 repo_name: joelnguemeta/django-auth-with-scoped-access
 

@@ -107,6 +107,11 @@ When a tenant admin creates or edits a custom role, they **cannot delegate permi
 
 This prevents a compromised tenant admin account from creating a backdoor role with global admin or billing privileges.
 
+The same anti-escalation policy applies when assigning an existing role. Holding
+`manage_assignments` authorizes assignment lifecycle operations, but does not
+allow an actor to delegate permissions they do not hold at the target scope.
+This is especially important for globally visible system roles.
+
 ---
 
 ## 6. Zero-Bypass Mutation Architecture

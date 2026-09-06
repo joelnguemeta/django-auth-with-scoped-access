@@ -509,6 +509,11 @@ class AbstractScopeAssignment(models.Model):
 
     def reactivate(self, *, by=None, reason: str = "") -> None:
         self._authorize_transition(by)
+        persisted_status = type(self)._base_manager.filter(pk=self.pk).values_list("status", flat=True).first()
+        if persisted_status != AssignmentStatus.SUSPENDED:
+            raise InvalidAssignmentTransitionError(
+                f"Cannot transition assignment from {persisted_status or self.status} to {AssignmentStatus.ACTIVE}."
+            )
         from . import engine
 
         scope = self.scope if self.scope_id is not None else None

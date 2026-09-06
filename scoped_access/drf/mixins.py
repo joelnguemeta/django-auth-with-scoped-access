@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import warnings
 
@@ -11,15 +12,65 @@ from rest_framework.exceptions import PermissionDenied
 from .. import engine
 
 
+def _get_view_permissions(view) -> list | tuple:
+    """Safely return permission instances or classes configured on the view.
+
+    Honors dynamic ``get_permissions()`` when implemented, falling back to
+    static ``permission_classes``. Includes a re-entrancy guard to prevent
+    infinite recursion if ``get_permissions()`` invokes ``get_queryset()``.
+    Permission discovery never calls ``has_permission`` or ``has_object_permission``.
+    """
+    if getattr(view, "_discovering_scoped_permissions", False):
+        return getattr(view, "permission_classes", ())
+
+    if hasattr(view, "get_permissions") and callable(view.get_permissions):
+        view._discovering_scoped_permissions = True
+        try:
+            return view.get_permissions()
+        except Exception:
+            return getattr(view, "permission_classes", ())
+        finally:
+            view._discovering_scoped_permissions = False
+
+    return getattr(view, "permission_classes", ())
+
+
 def _required_scoped_permissions(request, view, model) -> tuple[str, ...]:
-    """Return method permissions when the ViewSet uses ScopedModelPermission."""
+    """Return method permissions when the ViewSet uses ScopedModelPermission.
+
+    Inspects permission instances (including dynamic permissions and custom
+    ``perms_map`` configurations) from ``get_permissions()`` or ``permission_classes``.
+    Results are cached on the view instance per (method, model) for the request.
+    """
     from .permissions import ScopedModelPermission
 
-    for permission in getattr(view, "permission_classes", ()):
-        permission_class = permission if isinstance(permission, type) else type(permission)
-        if issubclass(permission_class, ScopedModelPermission):
-            return tuple(permission_class().get_required_permissions(request.method, model))
-    return ()
+    if request is None:
+        return ()
+
+    cache = getattr(view, "_required_scoped_permissions_cache", None)
+    if cache is None:
+        cache = {}
+        with contextlib.suppress(AttributeError, TypeError):
+            view._required_scoped_permissions_cache = cache
+
+    cache_key = (getattr(request, "method", None), model)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    permissions = _get_view_permissions(view)
+    required: list[str] = []
+    for permission in permissions:
+        try:
+            if isinstance(permission, ScopedModelPermission):
+                required.extend(permission.get_required_permissions(request.method, model))
+            elif isinstance(permission, type) and issubclass(permission, ScopedModelPermission):
+                required.extend(permission().get_required_permissions(request.method, model))
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+
+    result = tuple(dict.fromkeys(required))
+    cache[cache_key] = result
+    return result
 
 
 class ScopeQuerySetMixin:
@@ -65,12 +116,12 @@ class ScopeQuerySetMixin:
         # permissions module during package initialization.
         from .permissions import ScopedModelPermission, ScopeObjectPermission
 
-        permission_classes = getattr(self, "permission_classes", ())
-        if any(
-            isinstance(permission, type) and issubclass(permission, (ScopedModelPermission, ScopeObjectPermission))
-            for permission in permission_classes
-        ):
-            return
+        permissions = list(getattr(self, "permission_classes", ()))
+        permissions.extend(_get_view_permissions(self))
+        for permission in permissions:
+            cls = permission if isinstance(permission, type) else type(permission)
+            if isinstance(cls, type) and issubclass(cls, (ScopedModelPermission, ScopeObjectPermission)):
+                return
 
         warnings.warn(
             f"{type(self).__name__} uses ScopeQuerySetMixin without ScopeObjectPermission; "

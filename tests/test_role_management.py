@@ -12,6 +12,7 @@ from scoped_access.exceptions import (
     DirectAssignmentMutationError,
     DirectRoleMutationError,
     DirectRolePermissionMutationError,
+    InvalidAssignmentTransitionError,
     RoleAssignmentError,
     RoleManagementPermissionError,
     RoleOwnershipError,
@@ -222,3 +223,85 @@ def test_direct_security_sensitive_orm_mutations_are_rejected(role_world):
     )
     with pytest.raises(DirectAssignmentMutationError):
         ScopeAssignment.objects.filter(pk=assignment.pk).update(scope_id=str(role_world["org_b"].pk))
+
+
+def test_role_permission_queryset_and_bulk_updates_are_guarded(role_world):
+    """Guard direct queryset update(), bulk_update() and related-manager mutations on RolePermission."""
+    role = RoleService.create(by=role_world["bootstrap"], name="reader_role", owner=role_world["org_a"])
+    RoleService.grant_permissions(role, role_world["view"], by=role_world["bootstrap"])
+
+    ScopeAssignment.objects.grant(
+        user=role_world["outsider"], role=role, scope=role_world["org_a"], by=role_world["manager"]
+    )
+    assert engine.has_perm(role_world["outsider"], "things.view_thing", role_world["org_a"]) is True
+    assert engine.has_perm(role_world["outsider"], "things.delete_thing", role_world["org_a"]) is False
+
+    rp = RolePermission.objects.get(role=role, permission=role_world["view"])
+
+    # 1. Direct queryset update() is rejected
+    with pytest.raises(DirectRolePermissionMutationError):
+        RolePermission.objects.filter(role=role, permission=role_world["view"]).update(permission=role_world["delete"])
+
+    with pytest.raises(DirectRolePermissionMutationError):
+        RolePermission.objects.filter(pk=rp.pk).update(role=None)
+
+    # 2. Direct bulk_update() is rejected
+    rp.permission = role_world["delete"]
+    with pytest.raises(DirectRolePermissionMutationError):
+        RolePermission.objects.bulk_update([rp], ["permission"])
+
+    # 3. Related-manager update() and bulk_update() on role.role_permissions are rejected
+    with pytest.raises(DirectRolePermissionMutationError):
+        role.role_permissions.filter(permission=role_world["view"]).update(permission=role_world["delete"])
+
+    with pytest.raises(DirectRolePermissionMutationError):
+        role.role_permissions.bulk_update([rp], ["permission"])
+
+    # 4. Reverse-relation update() and bulk_update() on permission.scoped_role_permissions are rejected
+    other_role = RoleService.create(by=role_world["bootstrap"], name="other_role", owner=role_world["org_a"])
+    with pytest.raises(DirectRolePermissionMutationError):
+        role_world["view"].scoped_role_permissions.filter(role=role).update(role=other_role)
+
+    rp.role = other_role
+    with pytest.raises(DirectRolePermissionMutationError):
+        role_world["view"].scoped_role_permissions.bulk_update([rp], ["role"])
+
+    # 5. DirectRolePermissionMutationError is a subclass of DirectRoleMutationError
+    assert issubclass(DirectRolePermissionMutationError, DirectRoleMutationError)
+
+    # 6. Verify stored and effective permissions remain strictly unchanged
+    role.refresh_from_db()
+    assert list(role.permissions.all()) == [role_world["view"]]
+    assert engine.has_perm(role_world["outsider"], "things.view_thing", role_world["org_a"]) is True
+    assert engine.has_perm(role_world["outsider"], "things.delete_thing", role_world["org_a"]) is False
+
+
+def test_role_and_assignment_bulk_updates_are_guarded(role_world):
+    """Guard bulk_update() on Role and ScopeAssignment querysets."""
+    role = RoleService.create(by=role_world["bootstrap"], name="bulk_role")
+    role.name = "forged"
+    with pytest.raises(DirectRoleMutationError, match="Bulk role updates must run through"):
+        Role.objects.bulk_update([role], ["name"])
+
+    role.refresh_from_db()
+    assert role.name == "bulk_role"
+
+    assignment = ScopeAssignment.objects.grant(
+        user=role_world["outsider"], role=role, scope=role_world["org_a"], by=role_world["bootstrap"]
+    )
+
+    # bulk_update on status is rejected
+    assignment.status = "SUSPENDED"
+    with pytest.raises(InvalidAssignmentTransitionError, match="Assignment status must be changed through"):
+        ScopeAssignment.objects.bulk_update([assignment], ["status"])
+
+    assignment.refresh_from_db()
+    assert assignment.status == "ACTIVE"
+
+    # bulk_update on immutable fields is rejected
+    assignment.scope_id = str(role_world["org_b"].pk)
+    with pytest.raises(DirectAssignmentMutationError, match="immutable after creation"):
+        ScopeAssignment.objects.bulk_update([assignment], ["scope_id"])
+
+    assignment.refresh_from_db()
+    assert assignment.scope == role_world["org_a"]

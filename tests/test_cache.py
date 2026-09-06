@@ -4,7 +4,8 @@ and lifecycle APIs invalidate it in-place.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -21,6 +22,31 @@ from tests.testapp.models import Node
 SCOPED_ACCESS_ORG = {
     "HIERARCHY": [{"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}],
 }
+
+
+@pytest.mark.parametrize("rollback", [False, True])
+def test_nested_cache_preserves_revocation_and_rollback(world, rollback):
+    user = world["user"]
+    with request_cache():
+        assert engine.has_perm(user, "things.view_thing", world["org"])
+        try:
+            with transaction.atomic(), request_cache():
+                ScopeAssignment.objects.get(user=user).revoke(by=world["admin"])
+                assert not engine.has_perm(user, "things.view_thing", world["org"])
+                if rollback:
+                    raise RuntimeError("rollback")
+        except RuntimeError:
+            if not rollback:
+                raise
+        assert engine.has_perm(user, "things.view_thing", world["org"]) is rollback
+
+
+def test_nested_cache_invalidates_role_permissions(world):
+    with request_cache():
+        assert not engine.has_perm(world["user"], "things.change_thing", world["org"])
+        with request_cache():
+            world["role"].grant_permissions(world["change"], by=world["admin"])
+        assert engine.has_perm(world["user"], "things.change_thing", world["org"])
 
 
 @pytest.fixture
@@ -62,6 +88,23 @@ def test_explicit_clock_bypasses_cache(world):
         engine.user_permissions(user)  # warm the "now" entry
         past = datetime(2020, 1, 1, tzinfo=UTC)  # before the grant's valid_from
         assert engine.user_permissions(user, at=past) == set()
+
+
+def test_cached_assignments_observe_activation_and_expiry(world):
+    now = timezone.now()
+    role = RoleService.create(by=world["admin"], name="temporary", permissions=[world["change"]])
+    ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=role,
+        scope=world["org"],
+        by=world["admin"],
+        valid_from=now + timedelta(seconds=1),
+        valid_until=now + timedelta(seconds=2),
+    )
+    with request_cache():
+        for seconds, expected in [(0, False), (1, True), (2, False), (3, False)]:
+            with patch("django.utils.timezone.now", return_value=now + timedelta(seconds=seconds)):
+                assert engine.has_perm(world["user"], "things.change_thing", world["org"]) is expected
 
 
 def test_lifecycle_apis_invalidate_within_request(world):

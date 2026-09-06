@@ -305,3 +305,36 @@ def test_role_and_assignment_bulk_updates_are_guarded(role_world):
 
     assignment.refresh_from_db()
     assert assignment.scope == role_world["org_a"]
+
+
+@pytest.mark.parametrize("operation", ["grant", "revoke", "update", "delete"])
+def test_role_mutation_rejects_stale_owner(role_world, operation):
+    w = role_world
+    role = RoleService.create(by=w["bootstrap"], name="moving", owner=w["org_a"], permissions=[w["view"]])
+    stale = Role.objects.get(pk=role.pk)
+    RoleService.update(role, by=w["bootstrap"], owner=w["org_b"])
+    with pytest.raises(RoleManagementPermissionError):
+        if operation == "grant":
+            stale.grant_permissions(w["view"], by=w["manager"])
+        elif operation == "revoke":
+            stale.revoke_permissions(w["view"], by=w["manager"])
+        elif operation == "update":
+            RoleService.update(stale, by=w["manager"], name="stolen")
+        else:
+            RoleService.delete(stale, by=w["manager"])
+    role.refresh_from_db()
+    assert role.owner == w["org_b"]
+    assert role.name == "moving"
+    assert role.permissions.filter(pk=w["view"].pk).exists()
+
+
+def test_assignment_rejects_stale_prefetched_role_permissions(role_world):
+    w = role_world
+    role = RoleService.create(by=w["bootstrap"], name="growing", permissions=[w["view"]])
+    stale = Role.objects.prefetch_related("permissions__content_type").get(pk=role.pk)
+    role.grant_permissions(w["delete"], by=w["bootstrap"])
+    assert not engine.can_assign_role(w["manager"], stale, "ORGANIZATION", w["org_a"])
+    with pytest.raises(RoleAssignmentError):
+        ScopeAssignment.objects.grant(user=w["manager"], role=stale, scope=w["org_a"], by=w["manager"])
+    assert not ScopeAssignment.objects.filter(user=w["manager"], role=role).exists()
+    assert not engine.has_perm(w["manager"], "things.delete_thing", w["org_a"])

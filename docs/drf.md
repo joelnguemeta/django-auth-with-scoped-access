@@ -2,6 +2,22 @@
 
 Django Scoped Access provides a complete set of permissions, mixins, and views designed for Django REST Framework.
 
+Scoped mixins support `ScopedModelPermission` in nested AND compositions,
+for example `IsAuthenticated & ScopedModelPermission`, including permissions
+returned dynamically by `get_permissions()`. Discovery does not execute
+permission checks or consume reauthentication tokens.
+
+When `get_permissions()` calls `get_queryset()` recursively during discovery,
+the queryset retains its model but contains no rows. Permission discovery must
+not depend on those rows. Exceptions from `get_permissions()` propagate instead
+of silently falling back to a potentially weaker static policy.
+
+OR (`|`) and NOT (`~`) compositions containing `ScopedModelPermission` raise
+`ImproperlyConfigured`: these mixins cannot translate arbitrary alternative or
+negated permission policies into a safe queryset and target-scope filter.
+Use separate view policies or implement explicit custom scope filtering for
+those cases.
+
 ---
 
 ## 1. Quick Overview of DRF Components

@@ -170,11 +170,22 @@ class AbstractRole(models.Model):
     def _labels(self, perms) -> list[str]:
         return sorted(f"{p.content_type.app_label}.{p.codename}" for p in perms)
 
+    def _refresh_for_mutation(self) -> None:
+        """Lock the persisted role and discard stale owner/permission caches.
+
+        Call inside the mutation transaction; grants and permission edits
+        share this lock so R7 checks cannot race a role permission change.
+        """
+        type(self)._base_manager.select_for_update().get(pk=self.pk)
+        self.refresh_from_db()
+        cache.invalidate_all()
+
     @transaction.atomic
     def grant_permissions(self, *perms, by) -> None:
         from . import engine
         from .role_permissions import managed_role_permission_mutation
 
+        self._refresh_for_mutation()
         if not engine.can_manage_role(by, self):
             raise RoleManagementPermissionError("The actor cannot manage this role.")
         added = [p for p in perms if not self.permissions.filter(pk=p.pk).exists()]
@@ -197,6 +208,7 @@ class AbstractRole(models.Model):
         from . import engine
         from .role_permissions import managed_role_permission_mutation
 
+        self._refresh_for_mutation()
         if not engine.can_manage_role(by, self):
             raise RoleManagementPermissionError("The actor cannot manage this role.")
         removed = [p for p in perms if self.permissions.filter(pk=p.pk).exists()]
@@ -365,6 +377,7 @@ class ScopeAssignmentQuerySet(models.QuerySet):
             raise ValueError("valid_until must be later than valid_from.")
         from . import engine
 
+        role._refresh_for_mutation()
         if not engine.role_assignable(role, level, scope):
             raise RoleAssignmentError("A custom role can only be assigned inside its owner's subtree.")
         if not engine.can_manage_assignment(by, scope):
@@ -571,6 +584,7 @@ class AbstractScopeAssignment(models.Model):
             )
         from . import engine
 
+        self.role._refresh_for_mutation()
         scope = self.scope if self.scope_id is not None else None
         if not engine.can_assign_role(by, self.role, self.level, scope):
             raise RoleAssignmentError("The actor cannot delegate this role at the target scope.")

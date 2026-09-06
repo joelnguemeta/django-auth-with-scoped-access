@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- Prevent recursive dynamic DRF permission discovery from caching incomplete policies; return an empty queryset during discovery and propagate discovery errors.
+- Share cache invalidation state across nested request-cache contexts so revocations and transaction rollbacks remain visible.
+- Re-read and lock roles before management and assignment mutations to prevent stale owners or prefetched permissions from bypassing authorization.
+- Enforce scoped permissions inside DRF AND compositions; reject scoped OR/NOT compositions that cannot be represented by the mixins' filters.
+- Re-evaluate assignment activation and expiry at every cached authorization read.
 - **Role & Permission ORM Mutation Guards**: Guard `RolePermissionQuerySet.update()` and `bulk_update()` against actor-less mutations through public managers and related managers (`role.role_permissions`, `permission.scoped_role_permissions`). Additionally guard `RoleQuerySet.bulk_update()` and `ScopeAssignmentQuerySet.bulk_update()` to prevent bypassing `RoleService` and lifecycle state machines (#16).
 - **Assignment Reactivation Anti-Escalation**: Enforce Rule **R7** anti-escalation (`can_assign_role`) when reactivating suspended role assignments (`reactivate()`). Prevents managers from restoring suspended assignments containing permissions they do not effectively hold at the target scope (#15).
 - **Lifecycle Signal Consistency**: Make assignment lifecycle transitions and role permission changes transactional, invalidate request caches before emitting signals, and avoid serving memoized authorization decisions after transactional authority changes (#17).

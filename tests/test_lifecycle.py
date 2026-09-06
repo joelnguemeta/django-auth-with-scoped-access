@@ -19,6 +19,7 @@ from scoped_access.exceptions import (
     AssignmentScopeError,
     DirectAssignmentMutationError,
     InvalidAssignmentTransitionError,
+    RoleAssignmentError,
 )
 from scoped_access.models import AssignmentStatus, ScopeAssignment
 from tests.testapp.models import Node
@@ -314,3 +315,240 @@ def test_role_permission_changes_emit_added_and_removed(world):
     assert recorder.calls[0]["added"] == ["things.change_thing", "things.view_thing"]
     assert recorder.calls[0]["actor"] == world["admin"]
     assert recorder.calls[1]["removed"] == ["things.change_thing"]
+
+
+def test_assignment_reactivate_enforces_anti_escalation_r7_for_self(world):
+    """R7: A manager cannot reactivate their own suspended assignment containing permissions they lack."""
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access",
+        codename="manage_assignments",
+    )
+    ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
+    delete = Permission.objects.create(content_type=ct, codename="delete_thing", name="d")
+
+    manager_role = RoleService.create(by=world["admin"], name="assignment manager")
+    manager_role.grant_permissions(manage_assignments, by=world["admin"])
+    ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=manager_role,
+        scope=world["org"],
+        by=world["admin"],
+    )
+
+    privileged_role = RoleService.create(by=world["admin"], name="privileged role")
+    privileged_role.grant_permissions(delete, by=world["admin"])
+    privileged_assignment = ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=privileged_role,
+        scope=world["org"],
+        by=world["admin"],
+    )
+
+    privileged_assignment.suspend(by=world["admin"])
+    assert privileged_assignment.status == AssignmentStatus.SUSPENDED
+
+    recorder = Recorder(signals.assignment_reactivated)
+    try:
+        with pytest.raises(RoleAssignmentError, match="cannot delegate this role"):
+            privileged_assignment.reactivate(by=world["user"])
+    finally:
+        recorder.disconnect()
+
+    # The assignment must remain SUSPENDED and emit no event
+    privileged_assignment.refresh_from_db()
+    assert privileged_assignment.status == AssignmentStatus.SUSPENDED
+    assert len(recorder.calls) == 0
+
+
+def test_assignment_reactivate_enforces_anti_escalation_r7_for_other_user(world):
+    """R7: A manager cannot reactivate another user's suspended assignment containing permissions they lack."""
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access",
+        codename="manage_assignments",
+    )
+    ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
+    delete = Permission.objects.create(content_type=ct, codename="delete_thing_other", name="do")
+
+    manager = get_user_model().objects.create(username="manager_bob")
+    manager_role = RoleService.create(by=world["admin"], name="manager bob role")
+    manager_role.grant_permissions(manage_assignments, by=world["admin"])
+    ScopeAssignment.objects.grant(
+        user=manager,
+        role=manager_role,
+        scope=world["org"],
+        by=world["admin"],
+    )
+
+    privileged_role = RoleService.create(by=world["admin"], name="privileged role other")
+    privileged_role.grant_permissions(delete, by=world["admin"])
+    privileged_assignment = ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=privileged_role,
+        scope=world["org"],
+        by=world["admin"],
+    )
+
+    privileged_assignment.suspend(by=world["admin"])
+
+    with pytest.raises(RoleAssignmentError, match="cannot delegate this role"):
+        privileged_assignment.reactivate(by=manager)
+
+    privileged_assignment.refresh_from_db()
+    assert privileged_assignment.status == AssignmentStatus.SUSPENDED
+
+
+def test_assignment_reactivate_blocks_manager_holding_permissions_at_different_scope(world):
+    """R7: Holding permissions in organization B does not permit reactivating an assignment in organization A."""
+    other_org = Node.objects.create(slug="org-b", level="ORGANIZATION")
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access",
+        codename="manage_assignments",
+    )
+    ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
+    delete = Permission.objects.create(content_type=ct, codename="delete_thing_scoped", name="ds")
+
+    manager = get_user_model().objects.create(username="scoped_manager")
+    # Manager has manage_assignments in org-a
+    manager_a_role = RoleService.create(by=world["admin"], name="manager a")
+    manager_a_role.grant_permissions(manage_assignments, by=world["admin"])
+    ScopeAssignment.objects.grant(user=manager, role=manager_a_role, scope=world["org"], by=world["admin"])
+
+    # Manager has delete permission ONLY in org-b
+    manager_b_role = RoleService.create(by=world["admin"], name="manager b")
+    manager_b_role.grant_permissions(delete, by=world["admin"])
+    ScopeAssignment.objects.grant(user=manager, role=manager_b_role, scope=other_org, by=world["admin"])
+
+    # Target assignment is in org-a
+    privileged_role = RoleService.create(by=world["admin"], name="privileged org a")
+    privileged_role.grant_permissions(delete, by=world["admin"])
+    target_assignment = ScopeAssignment.objects.grant(
+        user=world["user"],
+        role=privileged_role,
+        scope=world["org"],
+        by=world["admin"],
+    )
+    target_assignment.suspend(by=world["admin"])
+
+    # Attempting to reactivate target assignment in org-a must fail because manager lacks delete in org-a
+    with pytest.raises(RoleAssignmentError, match="cannot delegate this role"):
+        target_assignment.reactivate(by=manager)
+
+    target_assignment.refresh_from_db()
+    assert target_assignment.status == AssignmentStatus.SUSPENDED
+
+
+def test_assignment_reactivate_succeeds_when_actor_holds_permissions_or_is_superuser(world):
+    """Reactivation succeeds when actor has required permissions at target scope, or is a superuser."""
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access",
+        codename="manage_assignments",
+    )
+    ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
+    view = Permission.objects.create(content_type=ct, codename="view_thing_reactivate", name="vr")
+
+    manager = get_user_model().objects.create(username="authorized_manager")
+    manager_role = RoleService.create(by=world["admin"], name="authorized manager role")
+    manager_role.grant_permissions(manage_assignments, view, by=world["admin"])
+    ScopeAssignment.objects.grant(user=manager, role=manager_role, scope=world["org"], by=world["admin"])
+
+    target_role = RoleService.create(by=world["admin"], name="target role")
+    target_role.grant_permissions(view, by=world["admin"])
+    assignment = ScopeAssignment.objects.grant(
+        user=world["user"], role=target_role, scope=world["org"], by=world["admin"]
+    )
+    assignment.suspend(by=world["admin"])
+
+    recorder = Recorder(signals.assignment_reactivated)
+    try:
+        # Authorized manager reactivates
+        assignment.reactivate(by=manager)
+        assert assignment.status == AssignmentStatus.ACTIVE
+        assert len(recorder.calls) == 1
+        assert recorder.calls[0]["actor"] == manager
+
+        # Superuser can also reactivate
+        assignment.suspend(by=world["admin"])
+        assignment.reactivate(by=world["admin"])
+        assert assignment.status == AssignmentStatus.ACTIVE
+        assert len(recorder.calls) == 2
+        assert recorder.calls[1]["actor"] == world["admin"]
+    finally:
+        recorder.disconnect()
+
+
+def test_assignment_reactivate_respects_explicit_grant_policies(world, settings):
+    """Explicit grant policies (any, list, callable) decide positive and negative reactivation."""
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access",
+        codename="manage_assignments",
+    )
+    ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
+    perm1 = Permission.objects.create(content_type=ct, codename="perm_one", name="p1")
+    perm2 = Permission.objects.create(content_type=ct, codename="perm_two", name="p2")
+
+    manager = get_user_model().objects.create(username="policy_manager")
+    manager_role = RoleService.create(by=world["admin"], name="policy manager role")
+    manager_role.grant_permissions(manage_assignments, by=world["admin"])
+    ScopeAssignment.objects.grant(user=manager, role=manager_role, scope=world["org"], by=world["admin"])
+
+    role_1 = RoleService.create(by=world["admin"], name="role one", permissions=[perm1])
+    role_2 = RoleService.create(by=world["admin"], name="role two", permissions=[perm2])
+    assign_1 = ScopeAssignment.objects.grant(user=world["user"], role=role_1, scope=world["org"], by=world["admin"])
+    assign_2 = ScopeAssignment.objects.grant(user=world["user"], role=role_2, scope=world["org"], by=world["admin"])
+    assign_1.suspend(by=world["admin"])
+    assign_2.suspend(by=world["admin"])
+
+    # 1. Policy 'any': manager can reactivate even without held permissions
+    settings.SCOPED_ACCESS = {**SCOPED_ACCESS_ORG, "GRANTABLE_PERMISSIONS": "any"}
+    assign_1.reactivate(by=manager)
+    assert assign_1.status == AssignmentStatus.ACTIVE
+    assign_1.suspend(by=world["admin"])
+
+    # 2. Policy list: allow perm1, forbid perm2
+    settings.SCOPED_ACCESS = {**SCOPED_ACCESS_ORG, "GRANTABLE_PERMISSIONS": ["things.perm_one"]}
+    assign_1.reactivate(by=manager)  # positive
+    assert assign_1.status == AssignmentStatus.ACTIVE
+
+    with pytest.raises(RoleAssignmentError):  # negative
+        assign_2.reactivate(by=manager)
+    assert assign_2.status == AssignmentStatus.SUSPENDED
+
+    # 3. Policy callable: custom decision
+    settings.SCOPED_ACCESS = {
+        **SCOPED_ACCESS_ORG,
+        "GRANTABLE_PERMISSIONS": lambda actor, role, permission, at=None: permission == "things.perm_one",
+    }
+    assign_1.suspend(by=world["admin"])
+    assign_1.reactivate(by=manager)  # positive: perm_one allowed
+    assert assign_1.status == AssignmentStatus.ACTIVE
+
+    with pytest.raises(RoleAssignmentError):  # negative: perm_two rejected
+        assign_2.reactivate(by=manager)
+    assert assign_2.status == AssignmentStatus.SUSPENDED
+
+
+def test_suspend_and_revoke_do_not_require_holding_role_permissions(world):
+    """Reducing authority (suspend/revoke) only requires manage_assignments, not R7 permission possession."""
+    manage_assignments = Permission.objects.get(
+        content_type__app_label="scoped_access",
+        codename="manage_assignments",
+    )
+    ct, _ = ContentType.objects.get_or_create(app_label="things", model="thing")
+    delete = Permission.objects.create(content_type=ct, codename="delete_thing_reduction", name="dr")
+
+    manager = get_user_model().objects.create(username="reduction_manager")
+    manager_role = RoleService.create(by=world["admin"], name="reduction manager role")
+    manager_role.grant_permissions(manage_assignments, by=world["admin"])
+    ScopeAssignment.objects.grant(user=manager, role=manager_role, scope=world["org"], by=world["admin"])
+
+    privileged_role = RoleService.create(by=world["admin"], name="privileged reduction role", permissions=[delete])
+    assignment = ScopeAssignment.objects.grant(
+        user=world["user"], role=privileged_role, scope=world["org"], by=world["admin"]
+    )
+
+    # Manager does NOT hold delete permission, but CAN suspend and revoke
+    assignment.suspend(by=manager)
+    assert assignment.status == AssignmentStatus.SUSPENDED
+
+    assignment.revoke(by=manager, reason="revoked by manager")
+    assert assignment.status == AssignmentStatus.REVOKED

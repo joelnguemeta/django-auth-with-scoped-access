@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **DRF Dynamic Permissions**: Enforce permission-aware scoping in `ScopeQuerySetMixin` and `ScopeWriteGuardMixin` when permissions are provided dynamically via `get_permissions()`, preserving custom `perms_map` configurations and preventing recursion or premature token consumption (#14).
+
 ## [0.2.0] - 2026-09-05
 
 ### Added

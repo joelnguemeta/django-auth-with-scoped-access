@@ -56,6 +56,15 @@ with an unrelated role in Organization B to read tickets from B. List querysets
 use the same permission-aware rule at SQL level, and create/update guards apply
 it to the resulting object.
 
+### Dynamic Permissions (`get_permissions()`)
+
+When customizing permissions dynamically per action via `get_permissions()`, `ScopeQuerySetMixin` and `ScopeWriteGuardMixin` automatically inspect the returned permission instances:
+
+- **List QuerySets** are filtered at the database level using the required scoped permissions extracted from any `ScopedModelPermission` returned by `get_permissions()`.
+- **Write Guards** (`create`, `update`, moving resources across tenants) enforce that the user holds the required action permission at the target scope.
+- **Custom `perms_map`**: Subclasses or instances of `ScopedModelPermission` with customized HTTP-to-permission mappings (such as custom actions or non-standard permission codenames) are preserved and respected by list filtering and write guards.
+- **Safe Evaluation**: Permission discovery never triggers premature permission evaluation, avoiding side effects or early consumption of single-use `RequireReAuth` tokens.
+
 ---
 
 ## 3. The Write Guard (`ScopeWriteGuardMixin`)

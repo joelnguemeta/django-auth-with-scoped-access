@@ -30,7 +30,10 @@ _transaction_dirty: contextvars.ContextVar[bool] = contextvars.ContextVar(
 
 @contextmanager
 def request_cache():
-    """Activate a fresh memoization store for the duration of the block."""
+    """Share one store and invalidation state across nested request blocks."""
+    if _store.get() is not None:
+        yield
+        return
     token = _store.set({})
     dirty_token = _transaction_dirty.set(False)
     try:

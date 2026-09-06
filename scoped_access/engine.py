@@ -12,6 +12,7 @@ import logging
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
+from django.utils import timezone
 
 from . import cache
 from .conf import get_assignment_model, get_config
@@ -196,8 +197,21 @@ def effective_assignments(user, at=None):
         return _fetch_effective(user)
     key = ("assignments", str(user.pk))
     if key not in store:
-        store[key] = list(_fetch_effective(user))
-    return store[key]
+        # Include future grants: both activation and expiration must be
+        # evaluated at each read, even while database rows are memoized.
+        store[key] = list(
+            get_assignment_model()
+            .objects.filter(user=user, status="ACTIVE")
+            .select_related("role")
+            .prefetch_related("role__permissions__content_type", "scope")
+        )
+    now = timezone.now()
+    return [
+        assignment
+        for assignment in store[key]
+        if (assignment.valid_from is None or assignment.valid_from <= now)
+        and (assignment.valid_until is None or now < assignment.valid_until)
+    ]
 
 
 def _role_perms(role) -> set[str]:
@@ -527,7 +541,14 @@ def can_assign_role(actor, role, level_name: str | None, node=None, at=None) -> 
     actor at the target scope. Explicit grant policies retain their documented
     opt-out/allow-list semantics.
     """
-    if actor is None or not actor.is_active or not role_assignable(role, level_name, node):
+    if actor is None or not actor.is_active:
+        return False
+    # Public callers may supply an instance prefetched before a role edit.
+    # Mutation entry points additionally hold the role row lock.
+    if role.pk is None:
+        return False
+    role = type(role)._base_manager.filter(pk=role.pk).first()
+    if role is None or not role_assignable(role, level_name, node):
         return False
     if actor.is_superuser:
         return True

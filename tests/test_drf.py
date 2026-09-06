@@ -11,7 +11,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from rest_framework import serializers, viewsets
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework.views import APIView
 
@@ -32,6 +34,53 @@ from scoped_access.registry import resources
 from tests.testapp.models import Node, Resource
 
 factory = APIRequestFactory()
+
+
+@pytest.mark.parametrize("dynamic", [False, True])
+def test_composed_permissions_enforce_list_create_and_move(org_world, dynamic):
+    _grant_resource_permissions(org_world)
+    actor = get_user_model().objects.get(username="boss")
+    unrelated = RoleService.create(by=actor, name="unrelated")
+    org_b = Node.objects.get(slug="org-b")
+    ScopeAssignment.objects.grant(user=org_world["user"], role=unrelated, scope=org_b, by=actor)
+
+    class Composed(SecureResourceViewSet):
+        permission_classes = [IsAuthenticated & (ScopedModelPermission & ScopeObjectPermission)]
+
+        def get_permissions(self):
+            if dynamic:
+                return [(IsAuthenticated & (ScopedModelPermission & ScopeObjectPermission))()]
+            return super().get_permissions()
+
+    request = factory.get("/resources/")
+    force_authenticate(request, user=org_world["user"])
+    response = Composed.as_view({"get": "list"})(request)
+    assert response.status_code == 200
+    assert [row["slug"] for row in response.data] == ["res-a"]
+
+    for scope, expected in [(org_b, 403), (org_world["org_a"], 201)]:
+        request = factory.post("/resources/", {"slug": "new", "anchor": scope.pk})
+        force_authenticate(request, user=org_world["user"])
+        assert Composed.as_view({"post": "create"})(request).status_code == expected
+    request = factory.patch("/resources/1/", {"anchor": org_b.pk})
+    force_authenticate(request, user=org_world["user"])
+    response = Composed.as_view({"patch": "partial_update"})(request, pk=org_world["res_a"].pk)
+    assert response.status_code == 403
+    org_world["res_a"].refresh_from_db()
+    assert org_world["res_a"].anchor == org_world["org_a"]
+
+
+@pytest.mark.parametrize("permission", [IsAuthenticated | ScopedModelPermission, ~ScopedModelPermission])
+def test_unsupported_scoped_composition_fails_explicitly(org_world, permission):
+    from scoped_access.drf.mixins import _required_scoped_permissions
+
+    class Unsupported(SecureResourceViewSet):
+        permission_classes = [permission]
+
+    request = factory.get("/resources/")
+    with pytest.raises(ImproperlyConfigured, match="AND"):
+        _required_scoped_permissions(request, Unsupported(), Resource)
+
 
 SCOPED_ACCESS_ORG = {
     "HIERARCHY": [{"level": "ORGANIZATION", "model": "testapp.Node", "discriminator": {"level": "ORGANIZATION"}}],
@@ -478,10 +527,14 @@ def test_dynamic_get_permissions_respects_custom_perms_map(org_world):
 def test_dynamic_get_permissions_recursion_guard(org_world):
     """Calling get_queryset() inside get_permissions() must not cause a RecursionError."""
     _grant_resource_permissions(org_world)
+    actor = get_user_model().objects.get(username="boss")
+    unrelated = RoleService.create(by=actor, name="unrelated recursive")
+    org_b = Node.objects.get(slug="org-b")
+    ScopeAssignment.objects.grant(user=org_world["user"], role=unrelated, scope=org_b, by=actor)
 
     class RecursiveGetPermissionsViewSet(ScopedModelViewSet):
         queryset = Resource.objects.all()
-        serializer_class = ResourceSerializer
+        serializer_class = WritableResourceSerializer
         permission_classes = [ScopeObjectPermission]
 
         def get_permissions(self):
@@ -494,6 +547,35 @@ def test_dynamic_get_permissions_recursion_guard(org_world):
     response = RecursiveGetPermissionsViewSet.as_view({"get": "list"})(request)
     assert response.status_code == 200
     assert [r["slug"] for r in response.data] == ["res-a"]
+
+    for scope, expected in [(org_b, 403), (org_world["org_a"], 201)]:
+        request = factory.post("/resources/", {"slug": "recursive-new", "anchor": scope.pk})
+        force_authenticate(request, user=org_world["user"])
+        response = RecursiveGetPermissionsViewSet.as_view({"post": "create"})(request)
+        assert response.status_code == expected
+
+    request = factory.patch("/resources/1/", {"anchor": org_b.pk})
+    force_authenticate(request, user=org_world["user"])
+    response = RecursiveGetPermissionsViewSet.as_view({"patch": "partial_update"})(request, pk=org_world["res_a"].pk)
+    assert response.status_code == 403
+    org_world["res_a"].refresh_from_db()
+    assert org_world["res_a"].anchor == org_world["org_a"]
+
+
+def test_dynamic_permission_discovery_error_does_not_use_static_fallback(org_world):
+    from scoped_access.drf.mixins import _required_scoped_permissions
+
+    class Broken(SecureResourceViewSet):
+        permission_classes = [ScopeObjectPermission]
+
+        def get_permissions(self):
+            raise RuntimeError("policy unavailable")
+
+    view = Broken()
+    with pytest.raises(RuntimeError, match="policy unavailable"):
+        _required_scoped_permissions(factory.get("/resources/"), view, Resource)
+    assert not view._discovering_scoped_permissions
+    assert not view._required_scoped_permissions_cache
 
 
 def test_dynamic_get_permissions_does_not_consume_reauth_token(org_world):

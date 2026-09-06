@@ -33,6 +33,7 @@ class RoleService:
         unknown = set(changes) - allowed
         if unknown:
             raise TypeError(f"Unsupported role fields: {', '.join(sorted(unknown))}.")
+        role._refresh_for_mutation()
         if not engine.can_manage_role(by, role):
             raise RoleManagementPermissionError("The actor cannot edit this role.")
 
@@ -66,6 +67,7 @@ class RoleService:
     @staticmethod
     @transaction.atomic
     def delete(role, *, by) -> None:
+        role._refresh_for_mutation()
         if not engine.can_manage_role(by, role):
             raise RoleManagementPermissionError("The actor cannot delete this role.")
         with managed_role_mutation():

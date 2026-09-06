@@ -6,8 +6,9 @@ import contextlib
 import copy
 import warnings
 
-from django.core.exceptions import FieldDoesNotExist
+from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import AND, NOT, OR, OperandHolder, SingleOperandHolder
 
 from .. import engine
 
@@ -15,7 +16,7 @@ from .. import engine
 def _get_view_permissions(view) -> list | tuple:
     """Safely return permission instances or classes configured on the view.
 
-    Honors dynamic ``get_permissions()`` when implemented, falling back to
+    Honors dynamic ``get_permissions()`` when implemented, otherwise using
     static ``permission_classes``. Includes a re-entrancy guard to prevent
     infinite recursion if ``get_permissions()`` invokes ``get_queryset()``.
     Permission discovery never calls ``has_permission`` or ``has_object_permission``.
@@ -27,12 +28,31 @@ def _get_view_permissions(view) -> list | tuple:
         view._discovering_scoped_permissions = True
         try:
             return view.get_permissions()
-        except Exception:
-            return getattr(view, "permission_classes", ())
         finally:
             view._discovering_scoped_permissions = False
 
     return getattr(view, "permission_classes", ())
+
+
+def _scoped_permission_leaves(permission):
+    """Discover AND leaves without executing permission checks or step-up."""
+    from .permissions import ScopedModelPermission
+
+    if isinstance(permission, (type, OperandHolder, SingleOperandHolder)):
+        permission = permission()
+    if isinstance(permission, ScopedModelPermission):
+        return [permission]
+    if isinstance(permission, (AND, OR, NOT)):
+        leaves = _scoped_permission_leaves(permission.op1)
+        if isinstance(permission, (AND, OR)):
+            leaves += _scoped_permission_leaves(permission.op2)
+        if leaves and not isinstance(permission, AND):
+            raise ImproperlyConfigured(
+                "ScopedModelPermission supports AND (&) composition only in scoped mixins; "
+                "OR (|) and NOT (~) require an explicit custom scope policy."
+            )
+        return leaves
+    return []
 
 
 def _required_scoped_permissions(request, view, model) -> tuple[str, ...]:
@@ -42,10 +62,10 @@ def _required_scoped_permissions(request, view, model) -> tuple[str, ...]:
     ``perms_map`` configurations) from ``get_permissions()`` or ``permission_classes``.
     Results are cached on the view instance per (method, model) for the request.
     """
-    from .permissions import ScopedModelPermission
-
     if request is None:
         return ()
+    if getattr(view, "_discovering_scoped_permissions", False):
+        raise ImproperlyConfigured("Scoped permissions cannot be resolved during permission discovery.")
 
     cache = getattr(view, "_required_scoped_permissions_cache", None)
     if cache is None:
@@ -60,13 +80,8 @@ def _required_scoped_permissions(request, view, model) -> tuple[str, ...]:
     permissions = _get_view_permissions(view)
     required: list[str] = []
     for permission in permissions:
-        try:
-            if isinstance(permission, ScopedModelPermission):
-                required.extend(permission.get_required_permissions(request.method, model))
-            elif isinstance(permission, type) and issubclass(permission, ScopedModelPermission):
-                required.extend(permission().get_required_permissions(request.method, model))
-        except (AttributeError, KeyError, TypeError, ValueError):
-            continue
+        for leaf in _scoped_permission_leaves(permission):
+            required.extend(leaf.get_required_permissions(request.method, model))
 
     result = tuple(dict.fromkeys(required))
     cache[cache_key] = result
@@ -94,6 +109,11 @@ class ScopeQuerySetMixin:
     scope_filter_all_actions = False
 
     def get_queryset(self):
+        if getattr(self, "_discovering_scoped_permissions", False):
+            # Dynamic permissions may inspect the model via get_queryset().
+            # Do not expose rows or cache provisional static permissions while
+            # their actual policy is still being constructed.
+            return super().get_queryset().none()
         self._warn_if_detail_routes_are_unprotected()
         qs = super().get_queryset()
         if not (self.scope_filter_all_actions or getattr(self, "action", None) == "list"):
@@ -119,6 +139,8 @@ class ScopeQuerySetMixin:
         permissions = list(getattr(self, "permission_classes", ()))
         permissions.extend(_get_view_permissions(self))
         for permission in permissions:
+            if _scoped_permission_leaves(permission):
+                return
             cls = permission if isinstance(permission, type) else type(permission)
             if isinstance(cls, type) and issubclass(cls, (ScopedModelPermission, ScopeObjectPermission)):
                 return

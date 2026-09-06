@@ -174,6 +174,7 @@ ACTIVE | SUSPENDED → REVOKED   (terminal)
 
 - Assignments MUST NOT be hard-deleted; revocation records `revoked_by`, `revoked_at`, `reason`.
 - Grants record `granted_by`, `granted_at`.
+- Reactivating an assignment (`SUSPENDED → ACTIVE`) restores authority and MUST enforce assignment anti-escalation ([Rule R7](#6-roles-and-ownership-multi-tenancy)).
 
 ### 8.2 Effectiveness
 

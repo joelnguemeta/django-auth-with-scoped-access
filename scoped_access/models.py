@@ -509,6 +509,11 @@ class AbstractScopeAssignment(models.Model):
 
     def reactivate(self, *, by=None, reason: str = "") -> None:
         self._authorize_transition(by)
+        from . import engine
+
+        scope = self.scope if self.scope_id is not None else None
+        if not engine.can_assign_role(by, self.role, self.level, scope):
+            raise RoleAssignmentError("The actor cannot delegate this role at the target scope.")
         self._transition(target=AssignmentStatus.ACTIVE, allowed_from=(AssignmentStatus.SUSPENDED,))
         signals.assignment_reactivated.send(sender=type(self), assignment=self, actor=by, reason=reason)
         cache.invalidate_user(self.user_id)

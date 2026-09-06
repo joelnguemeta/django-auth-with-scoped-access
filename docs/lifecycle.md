@@ -72,12 +72,16 @@ assignment = ScopeAssignment.objects.grant(
 ### Suspending and Reactivating
 
 ```python
-# Suspend an assignment
-assignment.suspend(by=admin_user, reason="Temporary leave")
+# Suspend an assignment (requires manage_assignments)
+assignment.suspend(by=manager_user, reason="Temporary leave")
 
-# Reactivate when the user returns
-assignment.reactivate(by=admin_user, reason="Returned from leave")
+# Reactivate when the user returns (requires manage_assignments and Rule R7 anti-escalation)
+assignment.reactivate(by=manager_user, reason="Returned from leave")
 ```
+
+> [!IMPORTANT]
+> **Anti-Escalation on Reactivation (Rule R7)**: Reactivating an assignment restores authority to the assignee. Therefore, `reactivate()` strictly enforces Rule **R7** (`can_assign_role`): the acting manager must possess all permissions contained in the role at the assignment's target scope (or satisfy the configured `GRANTABLE_PERMISSIONS` delegation policy). Suspending or revoking only requires `manage_assignments` authority.
+
 
 ### Revoking an Assignment
 

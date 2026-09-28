@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`ScopedModelAdmin`** (`scoped_access.admin`): scope-aware Django admin. Change lists are SQL-filtered by `view_*`, and view/change/delete are checked on the object. Saves (including `list_editable`) and the "delete selected" action are write-guarded, and foreign-key dropdowns are limited to writable nodes and viewable resources. The helpdesk example registers `Ticket` with it.
+
 ### Documentation
 - Fix rendering on Read the Docs: GitHub-style alerts and LaTeX formulas showed as raw text.
 - New Python API reference page (engine, registry, services, assignments, ReAuth, exceptions) and a Changelog page.

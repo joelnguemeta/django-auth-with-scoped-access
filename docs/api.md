@@ -131,4 +131,14 @@ All live in `scoped_access.exceptions`.
 | `AssignmentDeletionError` | Something tried to hard-delete an assignment. |
 | `DirectRoleMutationError`, `DirectRolePermissionMutationError`, `DirectAssignmentMutationError` | A write bypassed the service APIs (`objects.create()`, `update()`, `permissions.add()`, …). |
 
+---
+
+## Django Admin
+
+```python
+from scoped_access.admin import ScopedModelAdmin
+```
+
+A `ModelAdmin` that filters change lists, checks permissions on the object, guards saves and bulk deletes, and scopes foreign-key dropdowns. See [Django Admin](django-and-admin.md#4-django-admin).
+
 Lifecycle signals are listed in [Lifecycle & Assignments](lifecycle.md#5-lifecycle-signals); the DRF classes in [DRF Integration](drf.md).

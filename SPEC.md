@@ -36,7 +36,7 @@ Non-goals (v1): multiple/orthogonal hierarchies, DAG scopes, physical tenant iso
 | **Permission** | An opaque string `<namespace>.<codename>` (e.g. `patients.view_patient`). The catalog is host-defined. |
 | **Role** | Named set of permissions, optionally **owned** by a node. |
 | **Assignment** | Grant of one role to one principal at one scope: `(principal, role, level, node?)`. Root-level assignments have no node. |
-| **Resource** | Any host object access is asked about. A resource is **registered** with an **anchor** (a path from the resource to its node) or **unregistered** (= *global resource*). |
+| **Resource** | Any host object access is asked about. A resource is registered with an anchor, explicitly global, or unregistered. |
 | **Ancestor set** | For a node `n`: `{n} ∪ ancestors(n)`, mapped by level. |
 
 ---
@@ -49,6 +49,7 @@ An implementation MUST accept a declarative configuration equivalent to:
 hierarchy:            ordered list of {level, entity_type?, parent_accessor?}
 role_owner_levels:    subset of levels allowed to own roles       (default: [])
 grantable_permissions: "self" | "any" | explicit list | callable  (default: "self")
+strict_registration:   boolean                                      (default: false)
 reauth:               {enabled, ttl_seconds (default 300), verifiers}
 ```
 
@@ -69,7 +70,7 @@ Validation rules (MUST be enforced at startup, e.g. framework checks):
 1. Resolving the resource's declared **anchor** to a node (possibly through a multi-hop accessor path, e.g. `encounter → facility`).
 2. Walking parent accessors up to the top of the hierarchy.
 
-If the resource is unregistered, `chain` is undefined and the resource is **global**.
+If the resource is explicitly global, `chain` is undefined and the scope check is skipped. For backward compatibility, unregistered resources behave the same way unless strict registration is enabled. In strict mode, an unregistered resource is denied to every non-superuser, including principals with root assignments.
 If the anchor resolves to nothing (null reference), the resource MUST be treated as **not covered** by any non-root assignment (deny by default), except for superusers.
 
 ### 4.2 Coverage rule (normative core)

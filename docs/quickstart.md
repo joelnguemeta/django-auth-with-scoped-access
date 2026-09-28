@@ -143,7 +143,8 @@ Use the secure service APIs to create roles and grant assignments:
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from helpdesk.models import Organization, Team
-from scoped_access import RoleService, ScopeAssignment
+from scoped_access import RoleService
+from scoped_access.models import ScopeAssignment
 
 User = get_user_model()
 admin = User.objects.get(username="admin")

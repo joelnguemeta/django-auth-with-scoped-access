@@ -56,7 +56,7 @@ $$
 ```python
 from datetime import timedelta
 from django.utils import timezone
-from scoped_access import ScopeAssignment
+from scoped_access.models import ScopeAssignment
 
 # Temporary 30-day assignment
 assignment = ScopeAssignment.objects.grant(

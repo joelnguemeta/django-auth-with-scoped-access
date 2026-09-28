@@ -103,8 +103,8 @@ Algorithmes du moteur = généralisation directe de DME `users/utils/scopes.py` 
 - ✅ SPEC v0.1.0-draft validée par le propriétaire (4 juillet 2026). Elle reste `draft` tant qu'il n'existe pas de seconde implémentation (Java).
 - ✅ Package complet : moteur, backend, lifecycle, anti-escalade R5/R7, cache par requête transactionnel, modèles swappables, glue DRF (viewsets scopés, write guard, permissions dynamiques), ReAuth (password verifier, jetons atomiques à usage unique, throttling), exemple `example/` (helpdesk), docs MkDocs, CI (Python 3.11/3.14 × Django 4.2/5.2/6.0), workflow de publication PyPI.
 - ✅ Décisions : projet personnel (GitHub `joelnguemeta`), licence MIT, pas de guide de migration DME/APSR (cas de référence de conception uniquement).
-- ✅ PyPI : 0.1.0, 0.1.1. La 0.2.0 n'a jamais été publiée ; son contenu part dans la **0.3.0**.
-- ⬜ Tag + publication 0.3.0.
+- ✅ PyPI : 0.1.0, 0.1.1, 0.3.0 (la 0.2.0 n'a jamais été publiée). Publication = GitHub Release (le workflow tourne sur `release: published`, pas sur un merge ni un tag seul) ; bumper la version avant, PyPI refuse un numéro déjà publié.
+- ⬜ Publication 0.4.0 (`ScopedModelAdmin` + refonte doc).
 - ⬜ Seuil de couverture en CI.
 - ⬜ Cas de conformité portables pour §8.3/§9.
 - Non décidé : nom définitif (`django-scoped-access` = nom de travail et nom PyPI actuel).

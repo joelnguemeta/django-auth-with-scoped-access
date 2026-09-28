@@ -240,7 +240,7 @@ dev = [
     { name = "pytest-django", specifier = ">=4.8" },
 ]
 docs = [
-    { name = "mkdocs", specifier = ">=1.6.0" },
+    { name = "mkdocs", specifier = ">=1.6.0,<2" },
     { name = "mkdocs-material", specifier = ">=9.5.28" },
 ]
 lint = [

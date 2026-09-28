@@ -53,7 +53,7 @@ drf = ["djangorestframework>=3.14"]
 
 [dependency-groups]
 docs = [
-    "mkdocs>=1.6.0",
+    "mkdocs>=1.6.0,<2",
     "mkdocs-material>=9.5.28",
 ]
 dev = [

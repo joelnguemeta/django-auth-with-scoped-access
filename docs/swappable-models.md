@@ -38,6 +38,11 @@ class CustomRole(AbstractRole):
                 name="custom_unique_system_role_name",
             ),
         ]
+        # Required: the engine checks <app_label>.manage_roles / manage_global_roles.
+        permissions = [
+            ("manage_roles", "Can manage roles in scope"),
+            ("manage_global_roles", "Can manage system roles"),
+        ]
 
 
 class CustomAssignment(AbstractScopeAssignment):
@@ -70,6 +75,14 @@ class CustomAssignment(AbstractScopeAssignment):
                 name="custom_unique_live_flat",
             ),
         ]
+        indexes = [
+            models.Index(fields=["user", "status"], name="custom_assign_user_status_idx"),
+            models.Index(fields=["scope_ct", "scope_id"], name="custom_assign_scope_idx"),
+        ]
+        # Required: the engine checks <app_label>.manage_assignments.
+        permissions = [
+            ("manage_assignments", "Can manage scope assignments"),
+        ]
 ```
 
 ---
@@ -94,5 +107,8 @@ Generate and run migrations in your app:
 python manage.py makemigrations custom_auth
 python manage.py migrate
 ```
+
+!!! warning "Copy `constraints`, `indexes` and `permissions`"
+    `AbstractRole` and `AbstractScopeAssignment` do not declare `constraints`, `indexes` or `permissions`: only the concrete default models do, so your subclasses must declare them too. Without the uniqueness constraints, duplicate live assignments become possible. Without the `permissions`, only superusers can manage roles and assignments. The permissions take your app's label: `custom_auth.manage_roles`, `custom_auth.manage_assignments`, and so on.
 
 The rest of the engine (`RoleService`, `ScopeAssignment.objects.grant()`, `has_perm()`, `drf`, etc.) automatically detects and uses your swapped models.

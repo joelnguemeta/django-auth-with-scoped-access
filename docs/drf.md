@@ -61,10 +61,9 @@ class TicketViewSet(ScopedModelViewSet):
         return permissions
 ```
 
-> [!WARNING]
-> **Best Practice against IDOR**:  
-> Always include `ScopeObjectPermission` alongside `ScopeQuerySetMixin`. `ScopeQuerySetMixin` filters the list view, while `ScopeObjectPermission` enforces scope checks on detail endpoints (`retrieve`, `update`, `destroy`).
-> Prefer the unified ViewSets above. A runtime warning is emitted when `ScopeQuerySetMixin` is used without object-level protection or full-action queryset filtering.
+!!! warning "Composing mixins by hand: prevent IDOR"
+    Always include `ScopeObjectPermission` alongside `ScopeQuerySetMixin`. `ScopeQuerySetMixin` filters the list view, while `ScopeObjectPermission` enforces scope checks on detail endpoints (`retrieve`, `update`, `destroy`).
+    Prefer the unified ViewSets above. A runtime warning is emitted when `ScopeQuerySetMixin` is used without object-level protection or full-action queryset filtering.
 
 The unified ViewSets bind the method permission and scope to the same effective
 assignment. For example, `view_ticket` held in Organization A cannot be combined

@@ -32,12 +32,13 @@ SCOPED_ACCESS = {
 ## 2. Nodes & Ancestor Sets
 
 - A **Node** is a specific database row playing the role of a level (e.g., *Region: North*, *Facility: Central Hospital*).
-- The **Ancestor Set** of a node $n$ is defined as:
+- The **ancestor set** of a node is the node itself plus every ancestor reached by following the `parent` accessors upwards:
 
-$$\text{ancestor\_set}(n) = \{n\} \cup \text{ancestors}(n)$$
+```
+ancestor_set(n) = {n} ∪ ancestors(n)
+```
 
-For instance, if *Central Hospital* belongs to *District 4*, which belongs to *Region North*, the ancestor set of *Central Hospital* is:
-$$\{\text{Central Hospital}, \text{District 4}, \text{Region North}\}$$
+For instance, if *Central Hospital* belongs to *District 4*, which belongs to *Region North*, the ancestor set of *Central Hospital* is `{Central Hospital, District 4, Region North}`.
 
 ---
 
@@ -71,15 +72,12 @@ register_global(Country)
 
 ## 4. The Scope Coverage Rule (Normative Core)
 
-An assignment $a$ **covers** a resource $r$ if and only if:
+An assignment `a` **covers** a resource `r` if and only if:
 
-$$
-\text{covers}(a, r) \iff \begin{cases}
-a.\text{level is the root level} \\
-\text{OR} \\
-a.\text{node} \in \text{ancestor\_set}(\text{anchor\_node}(r))
-\end{cases}
-$$
+```
+covers(a, r) ⇔ a is a root (or flat-RBAC) assignment
+               OR a.node ∈ ancestor_set(anchor_node(r))
+```
 
 ### Fundamental Rules
 
@@ -98,7 +96,7 @@ Roles are named bundles of Django `auth.Permission` instances.
 | **Owner** | `owner = None` | Bound to a hierarchy node (`owner = node`) |
 | **Visibility (R1)** | Visible globally to all actors | Visible only to actors whose scope covers the owner |
 | **Assignability (R2)** | Assignable at any scope level | Assignable **only** within the owner's subtree |
-| **Delegated Management (R4)** | Requires `manage_global_roles` (or superuser) | Requires `manage_roles` effective on the owner node |
+| **Delegated Management (R4)** | Requires `scoped_access.manage_global_roles` held at a **root** scope (or superuser) | Requires `scoped_access.manage_roles` effective on the owner node |
 | **Anti-Escalation (R5)** | Checked against global permissions | Checked against permissions held at owner scope |
 
 ### Anti-Escalation Rule (R5)
@@ -111,6 +109,20 @@ The same anti-escalation policy applies when assigning an existing role. Holding
 `manage_assignments` authorizes assignment lifecycle operations, but does not
 allow an actor to delegate permissions they do not hold at the target scope.
 This is especially important for globally visible system roles.
+
+### Administration Permissions
+
+The package defines three Django permissions (created by `migrate`) that gate administration itself. Put them in roles like any other permission:
+
+| Permission | Allows | Where it must be held |
+|---|---|---|
+| `scoped_access.manage_roles` | Create, edit and delete **custom** roles | On a scope covering the role's owner |
+| `scoped_access.manage_global_roles` | Create, edit and delete **system** roles | At a root scope |
+| `scoped_access.manage_assignments` | Grant, suspend, reactivate and revoke assignments | On a scope covering the target node (root scope for root assignments) |
+
+Superusers pass these checks. A common bootstrap: a superuser creates an "Organization Admin" custom role containing `manage_roles`, `manage_assignments` and the business permissions, then grants it at the organization node. That admin can then manage roles and assignments inside the organization, but never delegate more than they hold.
+
+When a swappable model lives in another app, the permissions carry that app's label (for example `custom_auth.manage_roles`).
 
 ---
 

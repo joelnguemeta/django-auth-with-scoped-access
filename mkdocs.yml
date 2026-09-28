@@ -70,7 +70,8 @@ nav:
       - Django Backend & Admin: django-and-admin.md
       - Step-Up Re-Authentication: reauth.md
       - Swappable Models: swappable-models.md
-  - Security & Best Practices:
+  - Reference:
+      - Python API: api.md
       - Security Guide & Threat Model: security.md
-  - Specification:
       - Formal Specification (SPEC): spec.md
+      - Changelog: changelog.md

@@ -83,7 +83,7 @@ SCOPED_ACCESS = {
 ### 2. Register Resource Anchors
 
 ```python
-# apps.py or models.py
+# medical/apps.py — inside AppConfig.ready()
 from scoped_access import register
 
 register(Patient, anchor="facility")
@@ -94,19 +94,11 @@ register(MedicalRecord, anchor="patient__facility")
 
 ```python
 # views.py
-from rest_framework.viewsets import ModelViewSet
-from scoped_access.drf import (
-    RequireReAuth,
-    ScopedModelPermission,
-    ScopeObjectPermission,
-    ScopeQuerySetMixin,
-    ScopeWriteGuardMixin,
-)
+from scoped_access.drf import RequireReAuth, ScopedModelViewSet
 
-class PatientViewSet(ScopeWriteGuardMixin, ScopeQuerySetMixin, ModelViewSet):
-    queryset = Patient.objects.all()
+class PatientViewSet(ScopedModelViewSet):
+    queryset = Patient.objects.select_related("facility")
     serializer_class = PatientSerializer
-    permission_classes = [ScopedModelPermission, ScopeObjectPermission]
 
     def get_permissions(self):
         permissions = super().get_permissions()

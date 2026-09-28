@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-28
+
+First PyPI release since 0.1.1: it also ships everything listed under 0.2.0, which was never published.
+
 ### Security
 - Prevent recursive dynamic DRF permission discovery from caching incomplete policies; return an empty queryset during discovery and propagate discovery errors.
 - Share cache invalidation state across nested request-cache contexts so revocations and transaction rollbacks remain visible.
@@ -21,12 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **DRF Dynamic Permissions**: Enforce permission-aware scoping in `ScopeQuerySetMixin` and `ScopeWriteGuardMixin` when permissions are provided dynamically via `get_permissions()`, preserving custom `perms_map` configurations and preventing recursion or premature token consumption (#14).
+- Declare Django 5.2/6.0 and Python 3.14 support in package metadata to match the CI matrix; drop untested Django 5.0/5.1 classifiers.
+- Clarify that only the password ReAuth verifier ships built in; PIN, TOTP and WebAuthn are host-provided verifiers.
+- Correct the documented `ScopeAssignment` import, make the helpdesk seed safe to rerun, and align the specification and conformance documentation with strict registration.
 
 ## [0.2.0] - 2026-09-05
 
+Tagged in the changelog but never published to PyPI; shipped as part of 0.3.0.
+
 ### Added
 - **DRF Scoped ViewSets**: `ScopedModelViewSet` and `ScopedReadOnlyModelViewSet` integrating `ScopedModelPermission`, `ScopeObjectPermission`, `ScopeQuerySetMixin`, and `ScopeWriteGuardMixin` out of the box.
-- **Strict Resource Registration Mode**: `strict=True` on `register()` to enforce explicit parent relations and fail early on misconfigurations.
+- **Strict Resource Registration Mode**: `SCOPED_ACCESS["STRICT_REGISTRATION"] = True` denies unregistered resources to non-superusers; `register_global()` explicitly marks global models.
 
 ### Security
 - Bind DRF method permissions and scope coverage to the same effective assignment for list, detail, create, and update operations.
@@ -63,5 +72,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-Request Caching**: ContextVar-backed `ScopedAccessCacheMiddleware` with in-request lifecycle invalidation.
 - **Swappable Models**: Support for customizing `Role` (`SCOPED_ACCESS_ROLE_MODEL`) and `ScopeAssignment` (`SCOPED_ACCESS_ASSIGNMENT_MODEL`).
 - **Django System Checks**: Comprehensive startup validation of hierarchy and settings consistency.
-- **Language-Agnostic Conformance Test Suite**: 100% test pass rate across 102 test cases.
+- **Language-Agnostic Conformance Test Suite**: Shared JSON cases for authorization and ReAuth, with a Django reference adapter.
 - **Complete Documentation**: Full Material for MkDocs suite with guides, tutorials, threat model, and API references.

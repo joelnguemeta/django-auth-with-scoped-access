@@ -102,39 +102,37 @@ In Django templates, the standard `perms` context variable calls `has_perm()` **
 
 ## 4. Django Admin
 
-The backend answers the admin's permission checks, so staff users with scoped roles can log into the admin. The admin, however, **does not filter by scope on its own**: change lists and foreign-key dropdowns show every row. Scope the admin explicitly:
+The backend answers the admin's permission checks, so staff users with scoped roles can log into the admin. The stock `ModelAdmin`, however, **is not scope-aware**: change lists and foreign-key dropdowns show every row, and change/delete permissions are checked without the object. A `change_ticket` held in Team A would then allow editing Team B's tickets.
+
+Use `ScopedModelAdmin` for every registered resource:
 
 ```python
 # helpdesk/admin.py
 from django.contrib import admin
-from helpdesk.models import Team, Ticket
-from scoped_access import engine
+from helpdesk.models import Ticket
+from scoped_access.admin import ScopedModelAdmin
 
 
 @admin.register(Ticket)
-class TicketAdmin(admin.ModelAdmin):
-    def get_queryset(self, request):
-        # Rows outside the user's scope disappear from lists and return 404 on detail pages.
-        return engine.visible_resources(request.user, Ticket, permission="helpdesk.view_ticket")
-
-    # The admin checks change/delete WITHOUT the object: pass it, so the permission must hold in the ticket's scope.
-    def has_change_permission(self, request, obj=None):
-        return request.user.has_perm("helpdesk.change_ticket", obj) if obj else super().has_change_permission(request)
-
-    def has_delete_permission(self, request, obj=None):
-        return request.user.has_perm("helpdesk.delete_ticket", obj) if obj else super().has_delete_permission(request)
-
-    def get_actions(self, request):
-        actions = super().get_actions(request)
-        actions.pop("delete_selected", None)  # bulk delete checks the permission without the objects
-        return actions
-
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if db_field.name == "team":
-            # Only offer teams where the user may add tickets: blocks moving a ticket to a foreign scope.
-            kwargs["queryset"] = engine.accessible_nodes(request.user, "TEAM", permission="helpdesk.add_ticket")
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+class TicketAdmin(ScopedModelAdmin):
+    list_display = ["title", "team", "is_closed"]
+    search_fields = ["title"]
 ```
+
+| Admin behavior | `ScopedModelAdmin` |
+|---|---|
+| Change list, search, detail pages | Only rows where the user holds `view_*` (SQL-filtered). Other rows are reported as missing. |
+| View / change / delete checks | Evaluated **on the object**: the permission must hold in that object's scope. |
+| Saving (add, edit, `list_editable`) | Write guard: `add_*`/`change_*` must hold at the **target** scope, and on edit at the stored one too. Otherwise `403`. |
+| "Delete selected" action | Refused (`403`) if any selected object is outside the user's `delete_*` scope. |
+| Foreign-key dropdowns | Hierarchy nodes: only nodes where the user may add or change this model. Registered resources: only rows they may view. Other models: untouched. |
+
+Two rules follow from the specification:
+
+- **No permission implies another.** Holding `change_ticket` without `view_ticket` in a scope does not reveal that scope's tickets in the admin. Put `view_*` in roles meant for admin editors.
+- **Inlines are not scoped.** Give inline models their own `ScopedModelAdmin` and edit them there, or scope your `InlineModelAdmin` subclasses by hand.
+
+Override the provided methods (`get_queryset`, `save_model`, `formfield_for_foreignkey`, …) only by calling `super()`, or the corresponding guard is lost.
 
 !!! note "Keep business permissions out of Django groups"
     Permissions granted through `user.user_permissions` or groups are resolved by `ModelBackend`. They are global and unscoped. Grant business permissions only through roles and assignments, so every one of them carries a scope.

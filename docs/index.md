@@ -42,6 +42,7 @@ Instead of hardcoding organization levels, foreign keys, or tenant IDs into your
 - ⏱️ **Temporal Lifecycle & Audit Trail**: Assignments support `valid_from` and `valid_until` windows, suspension (`SUSPENDED`), and auditable revocation (`REVOKED`). Assignments are **never hard-deleted**.
 - 🛡️ **Step-Up Re-Authentication (ReAuth)**: Require short-lived, single-use proof of identity for highly sensitive endpoints (e.g., payouts, deletions, exports). A password verifier ships built in; PIN, TOTP or WebAuthn plug in as custom verifiers. Superusers are not exempt.
 - ⚡ **Database-Level Query Filtering**: List views and collection endpoints filter items directly in SQL via `scope_filter_q()`, preventing in-memory filtering bottlenecks.
+- 🗂️ **Scope-Aware Django Admin**: `ScopedModelAdmin` filters change lists, checks permissions per object and guards saves, bulk deletes and foreign-key choices.
 - 🚀 **First-Class Django REST Framework (DRF) Support**: Ships with drop-in permissions (`ScopedModelPermission`, `ScopeObjectPermission`), queryset mixins (`ScopeQuerySetMixin`), write guards (`ScopeWriteGuardMixin`), and introspection endpoints (`GET /me/access/`).
 - 🧩 **Zero-Bypass Architecture**: Internal mutation locks protect role and assignment modifications from bypassing lifecycle audit trails and permission checks.
 

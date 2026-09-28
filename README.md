@@ -50,6 +50,7 @@ Whether building a single-tenant app (flat RBAC), a multi-tenant B2B SaaS (Organ
 - ⏱️ **Temporal Validity & Audit Trail**: Assignments support `valid_from` / `valid_until` windows and status transitions (`ACTIVE` ⇄ `SUSPENDED` → `REVOKED`). Assignments are **never hard-deleted**.
 - 🔐 **Step-Up Re-Authentication (ReAuth)**: Require fresh, single-use proof of identity for high-risk actions. Ships a password verifier; PIN, TOTP or WebAuthn plug in as custom verifiers. Superusers are not exempt.
 - ⚡ **Database-Level Query Filtering**: SQL-level filtering (`scope_filter_q()`) for collection views—no in-memory Python iteration.
+- 🗂️ **Scope-Aware Django Admin**: `ScopedModelAdmin` filters change lists, checks permissions per object and guards saves, bulk deletes and foreign-key choices.
 - 🚀 **Full Django REST Framework (DRF) Integration**: Drop-in permissions (`ScopedModelPermission`, `ScopeObjectPermission`), query mixins (`ScopeQuerySetMixin`), write guards (`ScopeWriteGuardMixin`), and introspection endpoints (`GET /me/access/`).
 
 ---

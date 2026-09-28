@@ -83,6 +83,7 @@ scoped_access/
 ├── engine.py          # chain / covers / Q-builders — zéro dépendance DRF
 ├── cache.py           # cache par requête (contextvar + middleware)
 ├── signals.py
+├── admin.py           # ScopedModelAdmin (admin Django scopé : listes, objets, write guard)
 ├── drf/               # extra [drf] : permissions, mixins, viewsets, throttling, /me/access/
 └── reauth/            # extra [reauth] : service, verifiers, atomic, RequireReAuth, ReAuthView
 ```

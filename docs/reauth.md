@@ -1,6 +1,6 @@
 # Step-Up Re-Authentication (ReAuth)
 
-**Step-Up Re-Authentication** requires users to provide fresh proof of identity (password, PIN, WebAuthn, TOTP) before performing high-risk actions (e.g., executing financial transfers, exporting sensitive medical data, deleting resources, or modifying role permissions).
+**Step-Up Re-Authentication** requires users to provide fresh proof of identity (a password out of the box, or any custom verifier such as PIN, TOTP or WebAuthn) before performing high-risk actions (e.g., executing financial transfers, exporting sensitive medical data, deleting resources, or modifying role permissions).
 
 ---
 
@@ -18,7 +18,7 @@
      │ 3. POST /api/auth/reauth/ {password: "..."}    │
      ├───────────────────────────────────────────────►│ Verifies credentials
      │                                                │ Issues single-use token (TTL: 300s)
-     │ 4. 200 {"reauth_token": "abc123xyz"}           │
+     │ 4. 200 {"reauth_token": "abc…", "ttl": 300}    │
      │◄───────────────────────────────────────────────┤
      │                                                │
      │ 5. DELETE /api/tickets/123/                    │
@@ -47,6 +47,20 @@ SCOPED_ACCESS = {
 }
 ```
 
+!!! danger "`RequireReAuth` is a no-op while `ENABLED` is `False`"
+    `ENABLED` defaults to `False`, and while it is `False` every `RequireReAuth` gate lets requests through. Set it to `True` in every environment where the gates must hold, production first.
+
+### Endpoint contract
+
+| Request / response | Body |
+|---|---|
+| `POST /auth/reauth/` (authenticated) | `{"password": "..."}`, or `{"verifier": "<name>", ...credentials}` |
+| `200 OK` | `{"reauth_token": "<token>", "ttl": 300}` |
+| `400 Bad Request` | `{"detail": "Invalid credentials."}` (also returned for an unknown verifier) |
+| `403` from a gated view | `{"detail": "Re-authentication required for this action.", "reauth_required": true}` |
+
+The client sends the token in the `X-ReAuth-Token` header of the gated request. A token is consumed by its first use, even if the view then fails.
+
 `ReAuthView` applies this dedicated throttle automatically. Add an independent
 source-IP limit at the reverse proxy or API gateway as defense in depth.
 
@@ -74,8 +88,8 @@ class TicketViewSet(ModelViewSet):
         return permissions
 ```
 
-> [!IMPORTANT]
-> **Superusers Are NOT Exempt**: Superusers must also provide a valid ReAuth token when accessing views protected by `RequireReAuth`.
+!!! important
+    **Superusers Are NOT Exempt**: Superusers must also provide a valid ReAuth token when accessing views protected by `RequireReAuth`.
 
 ---
 
@@ -89,7 +103,7 @@ Implement the `verify(self, user, **credentials) -> bool` protocol and register 
 
 ```python
 # myapp/verifiers.py
-from scoped_access.reauth import verifiers
+from scoped_access import register_verifier
 
 class TotpVerifier:
     name = "totp"
@@ -97,10 +111,24 @@ class TotpVerifier:
     def verify(self, user, *, code: str | None = None, **kwargs) -> bool:
         if not code:
             return False
-        return user.totp_device.verify_token(code)
-
-verifiers.register(TotpVerifier())
+        return user.totp_device.verify_token(code)  # your TOTP library here
 ```
+
+Register it once at startup, typically in `AppConfig.ready()`:
+
+```python
+# myapp/apps.py
+class MyAppConfig(AppConfig):
+    name = "myapp"
+
+    def ready(self):
+        from scoped_access import register_verifier
+        from myapp.verifiers import TotpVerifier
+
+        register_verifier(TotpVerifier())
+```
+
+A verifier must return `False` (never raise) on missing or wrong credentials, and must compare secrets in constant time.
 
 ### Requesting a Token with a Custom Verifier
 
@@ -117,11 +145,12 @@ curl -X POST https://api.example.com/api/auth/reauth/ \
 
 - **Single-Use**: Tokens are burned upon first successful consumption or upon expiration.
 - **Foreign-Principal Miss**: Presenting token $T$ minted for User A while authenticating as User B fails closed without burning User A's token.
+- **Signals**: `reauth_issued`, `reauth_consumed` and `reauth_failed` fire with the `user` (never the token value), for audit and alerting.
 - **Automatic Invalidation on Password Change**: When a user's password changes, all active ReAuth tokens for that user are immediately invalidated across all workers via generation counters.
 - **Distributed Cache Backend**: In production, ensure `django.core.cache` uses a shared cache backend (for example Redis or Memcached) across all application servers.
 
-> [!WARNING]
-> In Kubernetes, ECS, or any multi-worker deployment, do **not** use `LocMemCache` or `DummyCache` for ReAuth. `LocMemCache` is local to each process/pod: a token issued by pod A may be rejected by pod B, and password-change invalidation may not reach every pod. When `REAUTH.ENABLED=True`, Django Scoped Access emits system check `scoped_access.W001` if the default cache is process-local.
+!!! warning
+    In Kubernetes, ECS, or any multi-worker deployment, do **not** use `LocMemCache` or `DummyCache` for ReAuth. `LocMemCache` is local to each process/pod: a token issued by pod A may be rejected by pod B, and password-change invalidation may not reach every pod. When `REAUTH.ENABLED=True`, Django Scoped Access emits system check `scoped_access.W001` if the default cache is process-local.
 
 ```python
 # settings.py

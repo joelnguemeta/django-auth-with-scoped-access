@@ -137,7 +137,9 @@ class HelpdeskConfig(AppConfig):
 
 ## 6. Create Roles & Assignments via API
 
-Use the secure service APIs to create roles and grant assignments:
+Every role and assignment change names an actor (`by=`), who must be allowed to make it. Bootstrap with a superuser; later, delegate administration by putting `scoped_access.manage_roles` and `scoped_access.manage_assignments` into a role (see [Administration Permissions](concepts.md#administration-permissions)).
+
+Use the service APIs, never `objects.create()` or `permissions.add()` (they raise, so that no change escapes the checks and the signals):
 
 ```python
 from django.contrib.auth import get_user_model
@@ -147,7 +149,7 @@ from scoped_access import RoleService
 from scoped_access.models import ScopeAssignment
 
 User = get_user_model()
-admin = User.objects.get(username="admin")
+admin = User.objects.get(username="admin")  # a superuser
 alice = User.objects.get(username="alice")
 
 acme_org = Organization.objects.create(name="Acme Corp")
@@ -173,31 +175,28 @@ ScopeAssignment.objects.grant(
 )
 ```
 
-Now, Alice can view and edit any ticket belonging to `support_team`!
+Now Alice can view and edit any ticket of `support_team`, and nothing else:
+
+```python
+alice.has_perm("helpdesk.change_ticket", ticket_of_support_team)  # True
+alice.has_perm("helpdesk.change_ticket", ticket_of_another_team)  # False
+```
 
 ---
 
 ## 7. Expose REST Endpoints (DRF)
 
-If using Django REST Framework, protect your ViewSets with the scoped mixins and permissions:
+If using Django REST Framework, start from `ScopedModelViewSet`. It bundles the method permission (`view_*`, `add_*`, …), the object scope check, SQL list filtering and the write guard, so none of them can be forgotten:
 
 ```python
 # helpdesk/views.py
-from rest_framework import viewsets
 from helpdesk.models import Ticket
 from helpdesk.serializers import TicketSerializer
-from scoped_access.drf import (
-    RequireReAuth,
-    ScopedModelPermission,
-    ScopeObjectPermission,
-    ScopeQuerySetMixin,
-    ScopeWriteGuardMixin,
-)
+from scoped_access.drf import RequireReAuth, ScopedModelViewSet
 
-class TicketViewSet(ScopeWriteGuardMixin, ScopeQuerySetMixin, viewsets.ModelViewSet):
+class TicketViewSet(ScopedModelViewSet):
     queryset = Ticket.objects.select_related("team__organization")
     serializer_class = TicketSerializer
-    permission_classes = [ScopedModelPermission, ScopeObjectPermission]
 
     def get_permissions(self):
         permissions = super().get_permissions()

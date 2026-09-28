@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- Fix rendering on Read the Docs: GitHub-style alerts and LaTeX formulas showed as raw text.
+- New Python API reference page (engine, registry, services, assignments, ReAuth, exceptions) and a Changelog page.
+- Django guide: list examples now filter by permission (`visible_resources(..., permission=...)`); warn that `has_perm()` without an object means "held anywhere"; new scoped Django admin section.
+- Document the `manage_roles` / `manage_global_roles` / `manage_assignments` administration permissions, root and flat-RBAC grants, and every lifecycle and ReAuth signal.
+- ReAuth: document the endpoint contract, and warn that `RequireReAuth` is a no-op while `REAUTH.ENABLED` is `False`.
+- Swappable models: the example now declares the required `permissions` and `indexes`.
+- Pin MkDocs below 2.0, which Material for MkDocs does not support.
+
 ## [0.3.0] - 2026-09-28
 
 First PyPI release since 0.1.1: it also ships everything listed under 0.2.0, which was never published.

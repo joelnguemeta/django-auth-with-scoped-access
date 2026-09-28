@@ -34,18 +34,18 @@ Scope assignments transition through three well-defined states:
 
 ## 2. Temporal Validity (`valid_from` / `valid_until`)
 
-An assignment is **effective** at time $t$ if and only if:
+An assignment is **effective** at time `t` if and only if:
 
-$$
-\text{effective}(a, t) \iff \begin{cases}
-a.\text{status} = \text{ACTIVE} \\
-\text{AND } (a.\text{valid\_from is NULL} \lor a.\text{valid\_from} \le t) \\
-\text{AND } (a.\text{valid\_until is NULL} \lor t < a.\text{valid\_until})
-\end{cases}
-$$
+```
+effective(a, t) ⇔ a.status = ACTIVE
+                  AND (a.valid_from  IS NULL OR a.valid_from <= t)
+                  AND (a.valid_until IS NULL OR t < a.valid_until)
+```
 
-> [!IMPORTANT]
-> **Read-Time Evaluation**: Temporal validity is computed dynamically at query time in SQL. The system does not depend on background cron jobs to invalidate expired grants.
+`valid_from` is inclusive and `valid_until` is exclusive.
+
+!!! important "Read-time evaluation"
+    Temporal validity is computed at read time (in SQL, or against the request cache). The system does not depend on background cron jobs to invalidate expired grants.
 
 ---
 
@@ -69,6 +69,18 @@ assignment = ScopeAssignment.objects.grant(
 )
 ```
 
+The level is inferred from the scope's model. Pass `level=` explicitly when several levels share one model. Two node-less shapes also exist:
+
+```python
+# Root assignment: covers the whole hierarchy (the root level must be configured)
+ScopeAssignment.objects.grant(user=auditor, role=auditor_role, level="NATIONAL", by=admin_user)
+
+# Flat RBAC (HIERARCHY = []): no level, no scope
+ScopeAssignment.objects.grant(user=alice, role=editor_role, by=admin_user)
+```
+
+`grant()` enforces, in order: custom roles only inside their owner's subtree (R2), `manage_assignments` on the target scope, and anti-escalation for the role's permissions (R7). A duplicate of a live (non-revoked) assignment is rejected by a database constraint.
+
 ### Suspending and Reactivating
 
 ```python
@@ -79,8 +91,8 @@ assignment.suspend(by=manager_user, reason="Temporary leave")
 assignment.reactivate(by=manager_user, reason="Returned from leave")
 ```
 
-> [!IMPORTANT]
-> **Anti-Escalation on Reactivation (Rule R7)**: Reactivating an assignment restores authority to the assignee. Therefore, `reactivate()` strictly enforces Rule **R7** (`can_assign_role`): the acting manager must possess all permissions contained in the role at the assignment's target scope (or satisfy the configured `GRANTABLE_PERMISSIONS` delegation policy). Suspending or revoking only requires `manage_assignments` authority.
+!!! important
+    **Anti-Escalation on Reactivation (Rule R7)**: Reactivating an assignment restores authority to the assignee. Therefore, `reactivate()` strictly enforces Rule **R7** (`can_assign_role`): the acting manager must possess all permissions contained in the role at the assignment's target scope (or satisfy the configured `GRANTABLE_PERMISSIONS` delegation policy). Suspending or revoking only requires `manage_assignments` authority.
 
 
 ### Revoking an Assignment
@@ -127,7 +139,16 @@ RoleService.delete(nurse_role, by=facility_admin)
 
 ## 5. Lifecycle Signals
 
-Django Scoped Access emits standard Django signals for all lifecycle operations, allowing your application to attach audit logging, notifications, or external integrations:
+Django Scoped Access emits standard Django signals for all lifecycle operations. The package stores no audit log of its own: subscribe to these signals to record one, send notifications or sync external systems.
+
+| Signal (`scoped_access.signals`) | Keyword arguments |
+|---|---|
+| `assignment_granted` | `assignment`, `actor` |
+| `assignment_suspended` | `assignment`, `actor`, `reason` |
+| `assignment_reactivated` | `assignment`, `actor`, `reason` |
+| `assignment_revoked` | `assignment`, `actor`, `reason` |
+| `role_permissions_changed` | `role`, `added`, `removed` (lists of `"app_label.codename"`), `actor` |
+| `reauth_issued` / `reauth_consumed` / `reauth_failed` | `user` (never the token value) |
 
 ```python
 # audit/receivers.py

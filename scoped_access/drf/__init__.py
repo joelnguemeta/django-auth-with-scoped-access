@@ -8,7 +8,12 @@ except ImportError as exc:
     ) from exc
 
 from .mixins import ScopeQuerySetMixin, ScopeWriteGuardMixin
-from .permissions import RequireReAuth, ScopedModelPermission, ScopeObjectPermission
+from .permissions import (
+    RequireFreshReAuth,
+    RequireReAuth,
+    ScopedModelPermission,
+    ScopeObjectPermission,
+)
 from .throttling import ReAuthRateThrottle
 from .views import MeAccessView, ReAuthView
 from .viewsets import ScopedModelViewSet, ScopedReadOnlyModelViewSet
@@ -17,6 +22,7 @@ __all__ = [
     "MeAccessView",
     "ReAuthView",
     "ReAuthRateThrottle",
+    "RequireFreshReAuth",
     "RequireReAuth",
     "ScopeObjectPermission",
     "ScopeQuerySetMixin",

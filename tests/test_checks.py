@@ -183,3 +183,13 @@ def test_enabled_reauth_accepts_shared_cache(settings):
         )
         == set()
     )
+
+
+@pytest.mark.parametrize("mode", ["window", "single_use"])
+def test_reauth_mode_accepts_known_values(mode):
+    assert "scoped_access.E014" not in _error_ids(HIERARCHY=VALID_HIERARCHY, REAUTH={"MODE": mode})
+
+
+@pytest.mark.parametrize("mode", [None, "", "sliding", True])
+def test_e014_reauth_mode_must_be_known(mode):
+    assert "scoped_access.E014" in _error_ids(HIERARCHY=VALID_HIERARCHY, REAUTH={"MODE": mode})

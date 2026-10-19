@@ -32,7 +32,7 @@ DEFAULTS = {
     "ROLE_OWNER_LEVELS": [],
     "GRANTABLE_PERMISSIONS": "self",
     "STRICT_REGISTRATION": False,
-    "REAUTH": {"ENABLED": False, "TTL": 300, "RATE": "5/minute"},
+    "REAUTH": {"ENABLED": False, "TTL": 300, "RATE": "5/minute", "MODE": "single_use"},
 }
 
 # Swappable models, à la AUTH_USER_MODEL. Top-level settings (not keys of the

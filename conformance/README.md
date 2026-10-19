@@ -30,6 +30,8 @@ The seven JSON files currently contain 49 authorization checks and 15 ReAuth scr
 | `cases/flat-rbac.json` | Empty hierarchy = plain RBAC degradation (SPEC §1) |
 | `cases/write-guard.json` | Scope-only write admission, unresolvable-anchor deny (SPEC §4.1, §5) |
 | `cases/reauth.json` | Step-up token flow: single-use, principal-bound, TTL, bulk invalidation (SPEC §7, §12.1.1) |
+| `cases/reauth-window.json` | Window mode: reuse until expiry, expiry never extended by use, fresh proof once, invalidation (SPEC §7.7) |
+| `cases/reauth-fresh-single-use.json` | Fresh requirement in single-use mode (SPEC §7.7) |
 | `cases/access-summary.json` | Effective-only introspection content (SPEC §10) |
 
 Not yet covered by portable JSON cases: duplicate prevention (§8.3) and lifecycle event emission (§9). Both have Django-specific tests in `tests/test_lifecycle.py`.

@@ -59,16 +59,29 @@ class ReAuthRequired(PermissionDenied):
 
 
 class RequireReAuth(BasePermission):
-    """Step-up gate (SPEC §7): expects a single-use token in X-ReAuth-Token.
+    """Step-up gate (SPEC §7): expects a token in X-ReAuth-Token, single-use
+    or reusable until expiry depending on ``REAUTH.MODE``.
 
     Evaluated in addition to — never instead of — the permission checks.
     Superusers are NOT exempt.
     """
 
+    fresh = False
+
     def has_permission(self, request, view) -> bool:
         if not get_config().reauth.get("ENABLED"):
             return True
         token = request.headers.get("X-ReAuth-Token")
-        if not ReAuthService.consume(token, request.user):
+        if not ReAuthService.consume(token, request.user, fresh=self.fresh):
             raise ReAuthRequired
         return True
+
+
+class RequireFreshReAuth(RequireReAuth):
+    """Step-up gate for irreversible actions (SPEC §7.7).
+
+    Even in window mode, the token must never have been consumed: a new proof
+    for this action.
+    """
+
+    fresh = True

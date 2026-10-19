@@ -1,0 +1,155 @@
+{
+  "description": "Step-up re-authentication in window mode (SPEC §7.7): a token verifies for a series of actions until its expiry, counted from issuance and never extended by use; a fresh consumption verifies only an unused token, once; foreign consumption never burns; bulk invalidation closes the window.",
+  "config": {
+    "hierarchy": [],
+    "root_level": null,
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [],
+  "roles": [],
+  "principals": [
+    {
+      "id": "alice",
+      "active": true,
+      "superuser": false,
+      "password": "s3cret",
+      "assignments": []
+    },
+    {
+      "id": "bob",
+      "active": true,
+      "superuser": false,
+      "password": "hunter2",
+      "assignments": []
+    }
+  ],
+  "resources": [],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [],
+  "reauth": {
+    "ttl": 600,
+    "mode": "window",
+    "script": [
+      {
+        "op": "issue",
+        "principal": "alice",
+        "password": "s3cret",
+        "expect": true,
+        "save_as": "t1"
+      },
+      {
+        "op": "consume",
+        "principal": "bob",
+        "token": "$t1",
+        "expect": false,
+        "note": "principal-bound"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t1",
+        "expect": true
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t1",
+        "expect": true,
+        "note": "window: reusable within its validity"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t1",
+        "fresh": true,
+        "expect": false,
+        "note": "fresh refuses a token already consumed"
+      },
+      {
+        "op": "issue",
+        "principal": "alice",
+        "password": "s3cret",
+        "expect": true,
+        "save_as": "t2"
+      },
+      {
+        "op": "consume",
+        "principal": "bob",
+        "token": "$t2",
+        "fresh": true,
+        "expect": false,
+        "note": "a foreign fresh attempt…"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t2",
+        "fresh": true,
+        "expect": true,
+        "note": "…does not burn the token: fresh succeeds once"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t2",
+        "fresh": true,
+        "expect": false,
+        "note": "fresh succeeds only once"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t2",
+        "expect": true,
+        "note": "after a fresh use the token still covers non-fresh actions"
+      },
+      {
+        "op": "advance",
+        "seconds": 599
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t1",
+        "expect": true,
+        "note": "still inside the window, 1s before expiry"
+      },
+      {
+        "op": "advance",
+        "seconds": 2
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t1",
+        "expect": false,
+        "note": "expiry counted from issuance: use never extends the window"
+      },
+      {
+        "op": "issue",
+        "principal": "alice",
+        "password": "s3cret",
+        "expect": true,
+        "save_as": "t3"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t3",
+        "expect": true
+      },
+      {
+        "op": "invalidate_all",
+        "principal": "alice"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t3",
+        "expect": false,
+        "note": "invalidation closes the window immediately"
+      }
+    ]
+  }
+}

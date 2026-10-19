@@ -17,7 +17,7 @@
      │                                                │
      │ 3. POST /api/auth/reauth/ {password: "..."}    │
      ├───────────────────────────────────────────────►│ Verifies credentials
-     │                                                │ Issues single-use token (TTL: 300s)
+     │                                                │ Issues a token (TTL: 300s)        
      │ 4. 200 {"reauth_token": "abc…", "ttl": 300}    │
      │◄───────────────────────────────────────────────┤
      │                                                │
@@ -59,7 +59,23 @@ SCOPED_ACCESS = {
 | `400 Bad Request` | `{"detail": "Invalid credentials."}` (also returned for an unknown verifier) |
 | `403` from a gated view | `{"detail": "Re-authentication required for this action.", "reauth_required": true}` |
 
-The client sends the token in the `X-ReAuth-Token` header of the gated request. A token is consumed by its first use, even if the view then fails.
+The client sends the token in the `X-ReAuth-Token` header of the gated request. In the default `single_use` mode, a token is consumed by its first use, even if the view then fails.
+
+### Window mode: one proof for a series of actions
+
+Asking for a proof before every action of a series (granting three roles in a row, for instance) wears users down. `"MODE": "window"` lets one token cover every gated action of the same user until it expires:
+
+```python
+SCOPED_ACCESS = {
+    ...
+    "REAUTH": {"ENABLED": True, "TTL": 600, "MODE": "window"},
+}
+```
+
+- The window is counted from the proof and is **never extended by use**: an active session still has to prove itself again every `TTL` seconds.
+- Invalidation closes it at once: call `ReAuthService.invalidate_all_for_user(user)` on logout and on session revocation (credential changes already do).
+- The client keeps the token in memory for the window and drops it on the next `reauth_required`.
+- Keep `TTL` short: anyone at an unlocked screen inherits the window.
 
 `ReAuthView` applies this dedicated throttle automatically. Add an independent
 source-IP limit at the reverse proxy or API gateway as defense in depth.
@@ -85,6 +101,21 @@ class TicketViewSet(ModelViewSet):
         permissions = super().get_permissions()
         if self.action in ("destroy", "export_phi"):
             permissions.append(RequireReAuth())
+        return permissions
+```
+
+### Irreversible actions: `RequireFreshReAuth`
+
+Some actions cannot be undone (ending an employment, cancelling a departure, deleting an account). `RequireFreshReAuth` accepts only a token that was **never used before**, so even in window mode such an action asks for a proof of its own. The fresh token then keeps covering ordinary actions until it expires. In `single_use` mode it behaves exactly like `RequireReAuth`.
+
+```python
+from scoped_access.drf import RequireFreshReAuth
+
+class StaffViewSet(ModelViewSet):
+    def get_permissions(self):
+        permissions = super().get_permissions()
+        if self.action == "terminate":
+            permissions.append(RequireFreshReAuth())
         return permissions
 ```
 

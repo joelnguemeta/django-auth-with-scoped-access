@@ -1,4 +1,4 @@
-"""ReAuth token service (SPEC §7): cache-backed, single-use, TTL-limited.
+"""ReAuth token service (SPEC §7): cache-backed, TTL-limited, single-use or window mode.
 
 Tokens carry their logical expiry so effectiveness can be evaluated against
 an explicit clock (`at`) — same read-time principle as assignments. The cache
@@ -20,6 +20,7 @@ from . import atomic, verifiers
 TOKEN_PREFIX = "scoped_access:reauth:"
 GENERATION_PREFIX = "scoped_access:reauth:generation:"
 LEGACY_USER_INDEX_PREFIX = "scoped_access:reauth:user:"
+USED_PREFIX = "scoped_access:reauth:used:"
 
 
 class ReAuthService:
@@ -71,9 +72,22 @@ class ReAuthService:
         return token
 
     @classmethod
-    def consume(cls, token: str | None, user, at=None) -> bool:
-        """Atomic check-and-delete. A foreign-principal miss does NOT burn
-        the token (SPEC §12.1.1); success and expiry do.
+    def _still_valid(cls, data, user, at) -> bool:
+        if data["user_id"] != str(user.pk):
+            return False
+        now = at or timezone.now()
+        if now >= timezone.datetime.fromisoformat(data["expires"]):
+            return False
+        return data.get("generation") == cls._generation(user)
+
+    @classmethod
+    def consume(cls, token: str | None, user, at=None, *, fresh: bool = False) -> bool:
+        """Verify a token for one protected action (SPEC §7.7).
+
+        single_use: atomic check-and-delete, every consumption is fresh.
+        window: the token keeps verifying until its expiry; ``fresh`` accepts
+        it only if never consumed before, and elects that consumer atomically.
+        A foreign-principal miss never burns the token (SPEC §12.1.1).
         """
         if not token or not user.is_active:
             if token:
@@ -89,6 +103,8 @@ class ReAuthService:
             return False
 
         ttl = int(get_config().reauth["TTL"])
+        if get_config().reauth.get("MODE", "single_use") == "window":
+            return cls._consume_in_window(token, data, user, at, fresh=fresh, ttl=ttl)
         data = atomic.atomic_pop(key, data, token=token, timeout=ttl * 2)
         if data is None:
             signals.reauth_failed.send(sender=cls, user=user)
@@ -96,16 +112,21 @@ class ReAuthService:
 
         # Revalidate the atomically retrieved payload. The token key is
         # immutable, but this keeps custom cache adapters fail-closed.
-        if data["user_id"] != str(user.pk):
+        if not cls._still_valid(data, user, at):
             signals.reauth_failed.send(sender=cls, user=user)
             return False
-        generation = data.get("generation")
-        now = at or timezone.now()
-        expires = timezone.datetime.fromisoformat(data["expires"])
-        if now >= expires:
+        signals.reauth_consumed.send(sender=cls, user=user)
+        return True
+
+    @classmethod
+    def _consume_in_window(cls, token: str, data, user, at, *, fresh: bool, ttl: int) -> bool:
+        # Validity first: an expired or invalidated token never marks itself used.
+        if not cls._still_valid(data, user, at):
             signals.reauth_failed.send(sender=cls, user=user)
             return False
-        if generation != cls._generation(user):
+        # cache.add is the portable compare-and-set: exactly one fresh consumer wins.
+        first_use = cache.add(f"{USED_PREFIX}{token}", True, timeout=ttl * 2)
+        if fresh and not first_use:
             signals.reauth_failed.send(sender=cls, user=user)
             return False
         signals.reauth_consumed.send(sender=cls, user=user)

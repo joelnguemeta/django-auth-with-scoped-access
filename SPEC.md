@@ -1,6 +1,6 @@
 # Scoped Access — Specification
 
-**Version:** 0.1.0-draft
+**Version:** 0.2.0-draft
 **Status:** Draft — normative once tagged 1.0.0
 
 This document specifies a language-agnostic authorization model combining:
@@ -155,11 +155,22 @@ Normative rules:
 Optional module. When enabled:
 
 1. **Issuance:** the principal presents a fresh proof to a **verifier** (v1: password; future: PIN, TOTP, WebAuthn). On success the implementation issues an opaque random token bound to the principal, stored server-side with TTL `reauth.ttl_seconds` (default 300). Naming an **unknown verifier** MUST fail issuance exactly like a bad proof (no token, no server error) — verifier names are not an enumeration oracle.
-2. **Consumption:** a protected action MUST receive the token (HTTP: header `X-ReAuth-Token`). Verification MUST enforce single use, MUST match the requesting principal, and MUST fail on expiry. Production backends SHOULD implement consumption as atomic check-and-delete.
+2. **Consumption:** a protected action MUST receive the token (HTTP: header `X-ReAuth-Token`). Verification MUST match the requesting principal and MUST fail on expiry. Its reuse rule depends on `reauth.mode` (§7.7), default `single_use`.
 3. **Failure contract (HTTP):** status 403 with a machine-readable body containing at least `{"reauth_required": true}` so clients can trigger the flow.
 4. **Invalidation:** all outstanding tokens of a principal MUST be invalidated on credential change and SHOULD be invalidatable in bulk (per-principal index).
 5. **Superusers are NOT exempt** from re-authentication.
 6. ReAuth is evaluated *in addition to* — never instead of — the permission decision of §5.
+
+### 7.7 Modes and fresh proof
+
+`reauth.mode` selects how a token may be reused:
+
+- **`single_use`** (default): a token verifies **once**. Production backends SHOULD implement consumption as atomic check-and-delete.
+- **`window`**: a token verifies for **any number** of protected actions by the same principal until its expiry. The expiry is counted from issuance and MUST NOT be extended by use. Invalidation (§7.4) closes the window immediately. This trades one proof per action for one proof per short series of actions; implementations SHOULD keep `ttl_seconds` short.
+
+A protected action MAY require a **fresh** proof (intended for irreversible actions). A fresh consumption verifies only a token **never consumed before**, and marks it consumed. In `window` mode the token then keeps verifying for non-fresh actions until expiry. In `single_use` mode every consumption is fresh. Electing the single fresh consumer MUST be atomic under concurrency.
+
+In both modes, a failed consumption by the wrong principal MUST NOT consume the token.
 
 ---
 
@@ -299,7 +310,7 @@ Resource fixtures: `"anchor": <node-id>` = registered resource; `"anchor": null`
 
 ### 12.1.1 Stateful ReAuth scripts
 
-Cases exercising §7 carry a top-level `"reauth": {"ttl": <seconds>, "script": [...]}` executed in order against a clock starting at `now`. Principals MAY declare a `"password"`. Steps:
+Cases exercising §7 carry a top-level `"reauth": {"ttl": <seconds>, "mode": "single_use" | "window", "script": [...]}` executed in order against a clock starting at `now`; `mode` defaults to `single_use`. Principals MAY declare a `"password"`. Steps:
 
 ```json
 {"op": "issue",   "principal": "alice", "password": "…", "expect": true, "save_as": "t1"}
@@ -308,7 +319,7 @@ Cases exercising §7 carry a top-level `"reauth": {"ttl": <seconds>, "script": [
 {"op": "invalidate_all", "principal": "alice"}
 ```
 
-`issue.expect` states whether a token is obtained; `$name` references a saved token; `consume` of an unknown/expired/foreign/already-used token MUST be false, and a failed consume by the wrong principal MUST NOT burn the token. An `issue` step MAY carry a `"verifier"` key; an unknown verifier name MUST yield `expect: false` (§7.1).
+`issue.expect` states whether a token is obtained; `$name` references a saved token; `consume` of an unknown/expired/foreign token MUST be false, as MUST a `consume` of an already-used token in `single_use` mode; a failed consume by the wrong principal MUST NOT burn the token. A `consume` step MAY carry `"fresh": true` to require a fresh proof (§7.7). An `issue` step MAY carry a `"verifier"` key; an unknown verifier name MUST yield `expect: false` (§7.1).
 
 ### 12.2 Conformance claim
 

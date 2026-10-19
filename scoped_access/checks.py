@@ -149,6 +149,14 @@ def check_scoped_access_config(app_configs, **kwargs):
                 )
             )
 
+        if reauth.get("MODE", "single_use") not in ("single_use", "window"):
+            errors.append(
+                checks.Error(
+                    "SCOPED_ACCESS: REAUTH.MODE must be 'single_use' or 'window'.",
+                    id="scoped_access.E014",
+                )
+            )
+
         if enabled:
             backend = settings.CACHES.get("default", {}).get("BACKEND", "")
             unsafe_backends = (

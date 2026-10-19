@@ -1,0 +1,9 @@
+# GitGuardian: paths holding intentionally fake credentials.
+# The conformance format (SPEC §12.1.1) gives test principals a password so
+# ReAuth scripts can issue tokens; the Django tests reuse the same values.
+# None of them guards anything. Keep this list narrow.
+version: 2
+secret:
+  ignored_paths:
+    - "conformance/cases/**"
+    - "tests/**"

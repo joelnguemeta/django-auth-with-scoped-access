@@ -104,7 +104,8 @@ Algorithmes du moteur = généralisation directe de DME `users/utils/scopes.py` 
 - ✅ Package complet : moteur, backend, lifecycle, anti-escalade R5/R7, cache par requête transactionnel, modèles swappables, glue DRF (viewsets scopés, write guard, permissions dynamiques), ReAuth (password verifier, jetons atomiques à usage unique, throttling), exemple `example/` (helpdesk), docs MkDocs, CI (Python 3.11/3.14 × Django 4.2/5.2/6.0), workflow de publication PyPI.
 - ✅ Décisions : projet personnel (GitHub `joelnguemeta`), licence MIT, pas de guide de migration DME/APSR (cas de référence de conception uniquement).
 - ✅ PyPI : 0.1.0, 0.1.1, 0.3.0 (la 0.2.0 n'a jamais été publiée). Publication = GitHub Release (le workflow tourne sur `release: published`, pas sur un merge ni un tag seul) ; bumper la version avant, PyPI refuse un numéro déjà publié.
-- ⬜ Publication 0.4.0 (`ScopedModelAdmin` + refonte doc).
+- ✅ SPEC 0.2.0-draft (19 octobre 2026, validé par le propriétaire) : §7.7 mode ReAuth `window` (une preuve couvre une série d'actions jusqu'à expiration, comptée depuis la preuve, jamais prolongée par l'usage ; défaut inchangé `single_use`) et `RequireFreshReAuth` pour les actions irréversibles. Origine : PSETEAM/bovoy#829.
+- ✅ PyPI 0.4.0 publiée le 19 octobre 2026 par erreur depuis `main` (release créée avant le merge du bump) : elle contient déjà le mode `window`. La 0.5.0 réaligne numéro et CHANGELOG. Leçon : créer la release GitHub **après** le merge du bump, jamais avant.
 - ⬜ Seuil de couverture en CI.
 - ⬜ Cas de conformité portables pour §8.3/§9.
 - Non décidé : nom définitif (`django-scoped-access` = nom de travail et nom PyPI actuel).

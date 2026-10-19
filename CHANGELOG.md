@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
+First release on PyPI since 0.3.0: it also ships everything listed under 0.4.0, which was tagged in the repository but never published.
+
 ### Added
 - **ReAuth window mode** (`REAUTH.MODE = "window"`, SPEC §7.7): one proof covers every gated action of the same user until the token expires. The window is counted from the proof, never extended by use, and closed by invalidation. Default stays `"single_use"`, so existing projects are unaffected.
 - **`RequireFreshReAuth`**: for irreversible actions, accepts only a token never used before, even in window mode.

@@ -32,6 +32,7 @@ SCOPED_ACCESS = {
         "ENABLED": True,
         "TTL": 300,  # Token validity in seconds (default: 300)
         "RATE": "5/minute",  # Credential attempts per authenticated user
+        "MODE": "single_use",  # or "window": one proof for every action until expiry
     },
 }
 
@@ -96,15 +97,16 @@ Defines the anti-escalation policy when creating or modifying roles:
 
 ### `REAUTH` (Optional)
 **Type**: `dict`  
-**Default**: `{"ENABLED": False, "TTL": 300, "RATE": "5/minute"}`
+**Default**: `{"ENABLED": False, "TTL": 300, "RATE": "5/minute", "MODE": "single_use"}`
 
 Configuration for the Step-Up Re-Authentication subsystem:
 
 | Key | Type | Default | Description |
 |---|---|:---:|---|
 | `ENABLED` | `bool` | `False` | Whether step-up re-authentication checks are enforced. |
-| `TTL` | `int` | `300` | Lifetime of a single-use re-authentication token in seconds. |
+| `TTL` | `int` | `300` | Lifetime of a re-authentication token in seconds, counted from the proof. |
 | `RATE` | `str` | `"5/minute"` | DRF throttle rate for proof attempts, per authenticated user. |
+| `MODE` | `str` | `"single_use"` | `"single_use"`: a token covers one action. `"window"`: it covers every action until it expires (SPEC §7.7). `RequireFreshReAuth` still demands an unused token. |
 
 ---
 
@@ -157,4 +159,5 @@ Django Scoped Access automatically validates your configuration during `manage.p
 | `scoped_access.E011` | Error | `STRICT_REGISTRATION` is not a boolean. |
 | `scoped_access.E012` | Error | Strict mode found an unregistered host model. |
 | `scoped_access.E013` | Error | `REAUTH.RATE` is not a DRF rate string such as `5/minute`. |
+| `scoped_access.E014` | Error | `REAUTH.MODE` is neither `single_use` nor `window`. |
 | `scoped_access.W001` | Warning | `REAUTH` is enabled but the default Django cache is not shared (`LocMemCache`/`DummyCache`). |

@@ -21,6 +21,7 @@ from scoped_access import RoleService
 from scoped_access.drf import (
     MeAccessView,
     ReAuthView,
+    RequireFreshReAuth,
     RequireReAuth,
     ScopedModelPermission,
     ScopedModelViewSet,
@@ -148,6 +149,10 @@ class SensitiveView(APIView):
         from rest_framework.response import Response
 
         return Response({"done": True})
+
+
+class IrreversibleView(SensitiveView):
+    permission_classes = [RequireFreshReAuth]
 
 
 @pytest.fixture
@@ -383,6 +388,36 @@ def test_reauth_http_flow_single_use(org_world):
 
     assert sensitive(token).status_code == 200
     assert sensitive(token).status_code == 403  # single use
+
+
+def test_reauth_http_flow_window_mode(settings, org_world):
+    settings.SCOPED_ACCESS = {**SCOPED_ACCESS_ORG, "REAUTH": {"ENABLED": True, "TTL": 600, "MODE": "window"}}
+    user = org_world["user"]
+
+    def call(view, token):
+        request = factory.post("/sensitive/", HTTP_X_REAUTH_TOKEN=token)
+        force_authenticate(request, user=user)
+        return view.as_view()(request)
+
+    def proof():
+        request = factory.post("/auth/reauth/", {"password": "s3cret"})
+        force_authenticate(request, user=user)
+        return ReAuthView.as_view()(request).data["reauth_token"]
+
+    token = proof()
+    assert call(SensitiveView, token).status_code == 200
+    assert call(SensitiveView, token).status_code == 200  # one proof, a series of actions
+
+    # An irreversible action wants a proof of its own…
+    denied = call(IrreversibleView, token)
+    assert denied.status_code == 403
+    assert denied.data["reauth_required"] is True
+
+    # …and a new token serves it once, then keeps covering the ordinary actions.
+    fresh = proof()
+    assert call(IrreversibleView, fresh).status_code == 200
+    assert call(IrreversibleView, fresh).status_code == 403
+    assert call(SensitiveView, fresh).status_code == 200
 
 
 def test_reauth_endpoint_is_throttled_per_user(settings, org_world):

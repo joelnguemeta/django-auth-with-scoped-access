@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **ReAuth window mode** (`REAUTH.MODE = "window"`, SPEC §7.7): one proof covers every gated action of the same user until the token expires. The window is counted from the proof, never extended by use, and closed by invalidation. Default stays `"single_use"`, so existing projects are unaffected.
+- **`RequireFreshReAuth`**: for irreversible actions, accepts only a token never used before, even in window mode.
+- Django check `scoped_access.E014` for an unknown `REAUTH.MODE`.
+- Conformance cases `reauth-window.json` and `reauth-fresh-single-use.json`; scripts accept `"mode"` and a `"fresh"` consume flag (SPEC §12.1.1).
+
+### Changed
+- SPEC 0.2.0-draft: §7.2 delegates the reuse rule to the new §7.7.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added

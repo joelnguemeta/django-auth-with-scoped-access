@@ -1,0 +1,79 @@
+{
+  "description": "Step-up re-authentication, fresh consumption in single_use mode (SPEC §7.7): every consumption is fresh, so a fresh requirement changes nothing.",
+  "config": {
+    "hierarchy": [],
+    "root_level": null,
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [],
+  "roles": [],
+  "principals": [
+    {
+      "id": "alice",
+      "active": true,
+      "superuser": false,
+      "password": "s3cret",
+      "assignments": []
+    },
+    {
+      "id": "bob",
+      "active": true,
+      "superuser": false,
+      "password": "hunter2",
+      "assignments": []
+    }
+  ],
+  "resources": [],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [],
+  "reauth": {
+    "ttl": 300,
+    "mode": "single_use",
+    "script": [
+      {
+        "op": "issue",
+        "principal": "alice",
+        "password": "s3cret",
+        "expect": true,
+        "save_as": "t1"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t1",
+        "fresh": true,
+        "expect": true,
+        "note": "fresh consumption of an unused token"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t1",
+        "expect": false,
+        "note": "single use, fresh or not"
+      },
+      {
+        "op": "issue",
+        "principal": "alice",
+        "password": "s3cret",
+        "expect": true,
+        "save_as": "t2"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t2",
+        "expect": true
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t2",
+        "fresh": true,
+        "expect": false,
+        "note": "already used: a fresh requirement cannot be met"
+      }
+    ]
+  }
+}

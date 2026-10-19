@@ -174,7 +174,7 @@ def _run_reauth_script(fx: Fixture, spec: dict) -> list[str]:
         elif op == "consume":
             ref = step["token"]
             token = tokens.get(ref[1:]) if ref.startswith("$") else ref
-            got = ReAuthService.consume(token, user, at=clock)
+            got = ReAuthService.consume(token, user, at=clock, fresh=step.get("fresh", False))
         else:
             raise NotImplementedError(f"Unknown reauth op: {op}")
         if got != step["expect"]:
@@ -206,7 +206,11 @@ def test_conformance(case_path: Path, settings):
         "HIERARCHY": hierarchy,
         "ROLE_OWNER_LEVELS": cfg["role_owner_levels"],
         "GRANTABLE_PERMISSIONS": cfg["grantable_permissions"],
-        "REAUTH": {"ENABLED": True, "TTL": case.get("reauth", {}).get("ttl", 300)},
+        "REAUTH": {
+            "ENABLED": True,
+            "TTL": case.get("reauth", {}).get("ttl", 300),
+            "MODE": case.get("reauth", {}).get("mode", "single_use"),
+        },
     }
 
     resources.clear()

@@ -326,6 +326,14 @@ Cases exercising §7 carry a top-level `"reauth": {"ttl": <seconds>, "mode": "si
 
 `lose_freshness_state` simulates loss of the stored information needed to establish whether the referenced token has been consumed. The adapter removes that information; if it is inseparable from the token, it removes the token itself. It MUST NOT simulate a new proof or issuance.
 
+### 12.1.2 Stateful assignment lifecycle scripts
+
+Cases MAY include `"lifecycle": {"script": [...]}`. Steps execute in order using the public assignment mutation API. A `grant` names the `actor`, `principal`, `role`, nullable `level` and nullable `node`; a successful grant MUST use a new `save_as` name to make its assignment available to event expectations and later steps as `"$name"`. The `suspend`, `reactivate`, and `revoke` operations name the `actor` and `assignment` reference and MAY include `reason` (default empty string).
+
+Each step declares `expect`: `"success"` or `"duplicate"` (a grant rejected by §8.3). The adapter maps implementation-specific duplicate errors to `"duplicate"`; other errors MUST fail the case. Every step also declares `events`, the exact ordered list of assignment lifecycle events emitted by that operation; an empty list asserts no event was emitted. Each event is an object with `type` (the dotted name from §9), symbolic `actor`, symbolic `assignment` reference, `principal`, `role`, nullable `level`, nullable `node`, and `status` at emission. Suspension, reactivation and revocation events also include `reason`. Adapters MUST observe actual events and payloads, rather than derive them from the expected operation; implementation-specific event objects are mapped to these symbolic identifiers.
+
+Listeners are attached after fixture setup and detached after the script. Fixture setup events are excluded. Saved references continue to identify revoked assignments; a later successful grant with the same tuple creates a distinct assignment.
+
 ### 12.2 Conformance claim
 
 An implementation may claim conformance to spec version X iff it passes **all** cases shipped with that version. Cases are append-only within a minor version; behavioural changes require a major bump.

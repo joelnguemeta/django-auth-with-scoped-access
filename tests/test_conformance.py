@@ -16,8 +16,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
+from django.db import IntegrityError, transaction
 
-from scoped_access import RoleService, engine
+from scoped_access import RoleService, engine, signals
 from scoped_access.models import Role, ScopeAssignment
 from scoped_access.mutations import managed_assignment_mutation
 from scoped_access.reauth import ReAuthService
@@ -190,6 +191,95 @@ def _run_reauth_script(fx: Fixture, spec: dict) -> list[str]:
     return failures
 
 
+def _run_lifecycle_script(fx: Fixture, spec: dict) -> list[str]:
+    """Observe actual lifecycle events and map their payloads to fixture IDs."""
+    failures, assignments, events = [], {}, []
+    users = {user.pk: name for name, user in fx.users.items()}
+    roles = {role.pk: name for name, role in fx.roles.items()}
+    nodes = {str(node.pk): name for name, node in fx.nodes.items()}
+    event_signals = {
+        "assignment.granted": signals.assignment_granted,
+        "assignment.suspended": signals.assignment_suspended,
+        "assignment.reactivated": signals.assignment_reactivated,
+        "assignment.revoked": signals.assignment_revoked,
+    }
+
+    def receiver(event_type):
+        def record(sender, assignment, actor, **kwargs):
+            payload = {
+                "type": event_type,
+                "actor": users.get(actor.pk) if actor is not None else None,
+                "assignment_pk": assignment.pk,
+                "principal": users.get(assignment.user_id),
+                "role": roles.get(assignment.role_id),
+                "level": assignment.level,
+                "node": nodes.get(str(assignment.scope_id)) if assignment.scope_id is not None else None,
+                "status": assignment.status,
+            }
+            if event_type != "assignment.granted":
+                payload["reason"] = kwargs.get("reason")
+            events.append(payload)
+
+        return record
+
+    receivers = {name: receiver(name) for name in event_signals}
+    for name, signal in event_signals.items():
+        signal.connect(receivers[name], weak=False)
+    try:
+        for index, step in enumerate(spec["script"]):
+            events.clear()
+            actor = fx.users[step["actor"]]
+            op = step["op"]
+            result = "success"
+            try:
+                with transaction.atomic():
+                    if op == "grant":
+                        assignment = ScopeAssignment.objects.grant(
+                            user=fx.users[step["principal"]],
+                            role=fx.roles[step["role"]],
+                            by=actor,
+                            level=step.get("level"),
+                            scope=fx.nodes[step["node"]] if step.get("node") else None,
+                        )
+                        if step.get("save_as"):
+                            if any(old.pk == assignment.pk for old in assignments.values()):
+                                failures.append(f"  lifecycle step[{index}]: grant reused a previous assignment")
+                            assignments[step["save_as"]] = assignment
+                    elif op in {"suspend", "reactivate", "revoke"}:
+                        ref = step["assignment"]
+                        assignment = assignments[ref.removeprefix("$")]
+                        getattr(assignment, op)(by=actor, reason=step.get("reason", ""))
+                    else:
+                        raise NotImplementedError(f"Unknown lifecycle op: {op}")
+            except IntegrityError:
+                if op != "grant":
+                    raise
+                node = fx.nodes[step["node"]] if step.get("node") else None
+                duplicate = ScopeAssignment.objects.filter(
+                    user=fx.users[step["principal"]],
+                    role=fx.roles[step["role"]],
+                    level=step.get("level"),
+                    scope_ct=ContentType.objects.get_for_model(node) if node else None,
+                    scope_id=str(node.pk) if node else None,
+                ).exclude(status="REVOKED")
+                if not duplicate.exists():
+                    raise
+                result = "duplicate"
+
+            if result != step["expect"]:
+                failures.append(f"  lifecycle step[{index}]: expected {step['expect']}, got {result}")
+            refs = {assignment.pk: f"${name}" for name, assignment in assignments.items()}
+            actual = [{**event, "assignment": refs.get(event["assignment_pk"])} for event in events]
+            for event in actual:
+                del event["assignment_pk"]
+            if actual != step["events"]:
+                failures.append(f"  lifecycle step[{index}]: expected events {step['events']}, got {actual}")
+    finally:
+        for name, signal in event_signals.items():
+            signal.disconnect(receivers[name])
+    return failures
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("case_path", CASE_PATHS, ids=lambda p: p.stem)
 def test_conformance(case_path: Path, settings):
@@ -240,5 +330,8 @@ def test_conformance(case_path: Path, settings):
 
     if "reauth" in case:
         failures += _run_reauth_script(fx, case["reauth"])
+
+    if "lifecycle" in case:
+        failures += _run_lifecycle_script(fx, case["lifecycle"])
 
     assert not failures, f"{case_path.name}: {len(failures)} check(s) failed:\n" + "\n".join(failures)

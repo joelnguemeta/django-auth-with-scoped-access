@@ -1,0 +1,189 @@
+{
+  "description": "Assignment lifecycle uniqueness and events at root scope (SPEC \u00a78.3 and \u00a79).",
+  "config": {
+    "hierarchy": [
+      "NATIONAL",
+      "ORGANIZATION"
+    ],
+    "root_level": "NATIONAL",
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [
+    {
+      "id": "org-a",
+      "level": "ORGANIZATION",
+      "parent": null
+    }
+  ],
+  "roles": [
+    {
+      "id": "editor",
+      "permissions": [
+        "articles.view_article"
+      ],
+      "owner": null
+    }
+  ],
+  "principals": [
+    {
+      "id": "admin",
+      "active": true,
+      "superuser": true,
+      "assignments": []
+    },
+    {
+      "id": "alice",
+      "active": true,
+      "superuser": false,
+      "assignments": []
+    },
+    {
+      "id": "other-admin",
+      "active": true,
+      "superuser": true,
+      "assignments": []
+    }
+  ],
+  "resources": [],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [],
+  "lifecycle": {
+    "script": [
+      {
+        "op": "grant",
+        "actor": "admin",
+        "principal": "alice",
+        "role": "editor",
+        "level": "NATIONAL",
+        "node": null,
+        "expect": "success",
+        "events": [
+          {
+            "type": "assignment.granted",
+            "actor": "admin",
+            "assignment": "$first",
+            "principal": "alice",
+            "role": "editor",
+            "level": "NATIONAL",
+            "node": null,
+            "status": "ACTIVE"
+          }
+        ],
+        "save_as": "first"
+      },
+      {
+        "op": "grant",
+        "actor": "admin",
+        "principal": "alice",
+        "role": "editor",
+        "level": "NATIONAL",
+        "node": null,
+        "expect": "duplicate",
+        "events": []
+      },
+      {
+        "op": "suspend",
+        "actor": "admin",
+        "assignment": "$first",
+        "reason": "leave",
+        "expect": "success",
+        "events": [
+          {
+            "type": "assignment.suspended",
+            "actor": "admin",
+            "assignment": "$first",
+            "principal": "alice",
+            "role": "editor",
+            "level": "NATIONAL",
+            "node": null,
+            "status": "SUSPENDED",
+            "reason": "leave"
+          }
+        ]
+      },
+      {
+        "op": "grant",
+        "actor": "admin",
+        "principal": "alice",
+        "role": "editor",
+        "level": "NATIONAL",
+        "node": null,
+        "expect": "duplicate",
+        "events": []
+      },
+      {
+        "op": "reactivate",
+        "actor": "other-admin",
+        "assignment": "$first",
+        "reason": "return",
+        "expect": "success",
+        "events": [
+          {
+            "type": "assignment.reactivated",
+            "actor": "other-admin",
+            "assignment": "$first",
+            "principal": "alice",
+            "role": "editor",
+            "level": "NATIONAL",
+            "node": null,
+            "status": "ACTIVE",
+            "reason": "return"
+          }
+        ]
+      },
+      {
+        "op": "revoke",
+        "actor": "admin",
+        "assignment": "$first",
+        "reason": "removed",
+        "expect": "success",
+        "events": [
+          {
+            "type": "assignment.revoked",
+            "actor": "admin",
+            "assignment": "$first",
+            "principal": "alice",
+            "role": "editor",
+            "level": "NATIONAL",
+            "node": null,
+            "status": "REVOKED",
+            "reason": "removed"
+          }
+        ]
+      },
+      {
+        "op": "grant",
+        "actor": "admin",
+        "principal": "alice",
+        "role": "editor",
+        "level": "NATIONAL",
+        "node": null,
+        "expect": "success",
+        "events": [
+          {
+            "type": "assignment.granted",
+            "actor": "admin",
+            "assignment": "$second",
+            "principal": "alice",
+            "role": "editor",
+            "level": "NATIONAL",
+            "node": null,
+            "status": "ACTIVE"
+          }
+        ],
+        "save_as": "second"
+      },
+      {
+        "op": "grant",
+        "actor": "admin",
+        "principal": "alice",
+        "role": "editor",
+        "level": "NATIONAL",
+        "node": null,
+        "expect": "duplicate",
+        "events": []
+      }
+    ]
+  }
+}

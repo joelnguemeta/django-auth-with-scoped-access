@@ -34,5 +34,6 @@ The Django adapter runs one parametrized pytest case per JSON file. Other Django
 | `cases/reauth-fresh-single-use.json` | Fresh requirement in single-use mode (SPEC §7.7) |
 | `cases/reauth-freshness-state-loss.json` | Fresh proof fails closed after loss of freshness state (SPEC §7.7) |
 | `cases/access-summary.json` | Effective-only introspection content (SPEC §10) |
+| `cases/assignment-lifecycle-*.json` | Duplicate prevention and assignment lifecycle event payloads across flat, root and node scopes (SPEC §8.3, §9) |
 
-Not yet covered by portable JSON cases: duplicate prevention (§8.3) and lifecycle event emission (§9). Both have Django-specific tests in `tests/test_lifecycle.py`.
+Role-permission and ReAuth events are not yet covered by portable lifecycle scripts; role-permission events also have Django-specific tests.

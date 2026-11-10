@@ -9,7 +9,7 @@ import pytest
 from django.core.cache import cache
 
 from scoped_access.reauth import ReAuthService, atomic
-from scoped_access.reauth.service import GENERATION_PREFIX, TOKEN_PREFIX
+from scoped_access.reauth.service import FRESH_PREFIX, GENERATION_PREFIX, TOKEN_PREFIX
 
 INITIAL_PASSWORD = "initial-secret"
 NEW_PASSWORD = "new-secret"
@@ -81,6 +81,40 @@ def test_concurrent_consumption_has_exactly_one_winner(user, monkeypatch):
         results = list(executor.map(lambda _: ReAuthService.consume(token, user), range(2)))
 
     assert sorted(results) == [False, True]
+
+
+@pytest.mark.django_db
+def test_window_freshness_state_loss_fails_closed(user, settings):
+    settings.SCOPED_ACCESS = {"REAUTH": {"ENABLED": True, "TTL": 300, "MODE": "window"}}
+    token = ReAuthService.issue(user, password=INITIAL_PASSWORD)
+    cache.delete(f"{FRESH_PREFIX}{token}")
+
+    assert ReAuthService.consume(token, user, fresh=True) is False
+    assert ReAuthService.consume(token, user) is True
+    assert ReAuthService.consume(token, user, fresh=True) is False
+
+
+@pytest.mark.django_db
+def test_concurrent_window_fresh_consumption_has_exactly_one_winner(user, settings, monkeypatch):
+    settings.SCOPED_ACCESS = {"REAUTH": {"ENABLED": True, "TTL": 300, "MODE": "window"}}
+    token = ReAuthService.issue(user, password=INITIAL_PASSWORD)
+    token_key = f"{TOKEN_PREFIX}{token}"
+    barrier = Barrier(2)
+    original_get = cache.get
+
+    def racing_get(key, *args, **kwargs):
+        value = original_get(key, *args, **kwargs)
+        if key == token_key:
+            barrier.wait(timeout=5)
+        return value
+
+    monkeypatch.setattr(cache, "get", racing_get)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: ReAuthService.consume(token, user, fresh=True), range(2)))
+
+    assert sorted(results) == [False, True]
+    monkeypatch.setattr(cache, "get", original_get)
+    assert ReAuthService.consume(token, user) is True
 
 
 @pytest.mark.django_db

@@ -161,6 +161,14 @@ def _run_reauth_script(fx: Fixture, spec: dict) -> list[str]:
         if op == "invalidate_all":
             ReAuthService.invalidate_all_for_user(user)
             continue
+        if op == "lose_freshness_state":
+            from scoped_access.reauth.service import FRESH_PREFIX, USED_PREFIX
+
+            ref = step["token"]
+            token = tokens.get(ref[1:]) if ref.startswith("$") else ref
+            cache.delete(f"{FRESH_PREFIX}{token}")
+            cache.delete(f"{USED_PREFIX}{token}")  # old-format marker during regression tests
+            continue
         if op == "issue":
             kwargs = {}
             if "password" in step:

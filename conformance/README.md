@@ -20,7 +20,7 @@ Each implementation ships an **adapter** responsible for:
 
 ## Current cases
 
-The seven JSON files currently contain 49 authorization checks and 15 ReAuth script steps. The Django adapter runs one parametrized pytest case per file. Other Django behavior is covered separately by the project's unit and integration tests; it is not automatically covered by this portable suite.
+The Django adapter runs one parametrized pytest case per JSON file. Other Django behavior is covered separately by the project's unit and integration tests; it is not automatically covered by this portable suite.
 
 | File | Covers |
 |---|---|
@@ -32,6 +32,7 @@ The seven JSON files currently contain 49 authorization checks and 15 ReAuth scr
 | `cases/reauth.json` | Step-up token flow: single-use, principal-bound, TTL, bulk invalidation (SPEC §7, §12.1.1) |
 | `cases/reauth-window.json` | Window mode: reuse until expiry, expiry never extended by use, fresh proof once, invalidation (SPEC §7.7) |
 | `cases/reauth-fresh-single-use.json` | Fresh requirement in single-use mode (SPEC §7.7) |
+| `cases/reauth-freshness-state-loss.json` | Fresh proof fails closed after loss of freshness state (SPEC §7.7) |
 | `cases/access-summary.json` | Effective-only introspection content (SPEC §10) |
 
 Not yet covered by portable JSON cases: duplicate prevention (§8.3) and lifecycle event emission (§9). Both have Django-specific tests in `tests/test_lifecycle.py`.

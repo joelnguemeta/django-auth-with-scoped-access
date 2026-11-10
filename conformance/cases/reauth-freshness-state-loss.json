@@ -1,0 +1,55 @@
+{
+  "description": "A window token never becomes fresh again when freshness state is lost (SPEC \u00a77.7).",
+  "config": {
+    "hierarchy": [],
+    "root_level": null,
+    "role_owner_levels": [],
+    "grantable_permissions": "self"
+  },
+  "nodes": [],
+  "roles": [],
+  "principals": [
+    {
+      "id": "alice",
+      "active": true,
+      "superuser": false,
+      "password": "x",
+      "assignments": []
+    }
+  ],
+  "resources": [],
+  "now": "2026-07-04T12:00:00Z",
+  "checks": [],
+  "reauth": {
+    "ttl": 600,
+    "mode": "window",
+    "script": [
+      {
+        "op": "issue",
+        "principal": "alice",
+        "password": "x",
+        "expect": true,
+        "save_as": "t1"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t1",
+        "fresh": true,
+        "expect": true
+      },
+      {
+        "op": "lose_freshness_state",
+        "principal": "alice",
+        "token": "$t1"
+      },
+      {
+        "op": "consume",
+        "principal": "alice",
+        "token": "$t1",
+        "fresh": true,
+        "expect": false
+      }
+    ]
+  }
+}

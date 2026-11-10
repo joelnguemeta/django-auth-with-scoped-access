@@ -193,4 +193,6 @@ CACHES = {
 }
 ```
 
-Token consumption elects exactly one winner under concurrent requests. Redis backends use `GETDEL` (with an atomic Lua fallback for Redis versions before 6.2). Other Django cache backends use `cache.add()` as an atomic consumption claim before deleting the token. Custom cache backends must therefore honor Django's atomic add-if-absent contract.
+Single-use consumption and the first use of a window token elect exactly one winner under concurrent requests. Redis backends use `GETDEL` (with an atomic Lua fallback for Redis versions before 6.2). Other Django cache backends use `cache.add()` as an atomic consumption claim before deleting the token or freshness state. Custom cache backends must therefore honor Django's atomic add-if-absent contract.
+
+Window tokens issued before the freshness-state fix cannot satisfy `RequireFreshReAuth`; obtain a new proof. Losing the freshness state, for example to cache eviction, likewise requires a new proof for fresh-only actions. During an upgrade, old and new workers must not handle window tokens concurrently: old workers do not update the new freshness state. Coordinate the deployment or temporarily disable the affected actions until every worker has been upgraded.

@@ -21,6 +21,7 @@ TOKEN_PREFIX = "scoped_access:reauth:"
 GENERATION_PREFIX = "scoped_access:reauth:generation:"
 LEGACY_USER_INDEX_PREFIX = "scoped_access:reauth:user:"
 USED_PREFIX = "scoped_access:reauth:used:"
+FRESH_PREFIX = "scoped_access:reauth:fresh:"
 
 
 class ReAuthService:
@@ -59,6 +60,10 @@ class ReAuthService:
         ttl = int(get_config().reauth["TTL"])
         issued_at = at or timezone.now()
         token = secrets.token_urlsafe(32)
+        if get_config().reauth.get("MODE", "single_use") == "window":
+            # Absence means freshness cannot be established, including after
+            # eviction or when a token was issued by an older deployment.
+            cache.set(f"{FRESH_PREFIX}{token}", True, timeout=ttl * 2)
         cache.set(
             f"{TOKEN_PREFIX}{token}",
             {
@@ -124,8 +129,9 @@ class ReAuthService:
         if not cls._still_valid(data, user, at):
             signals.reauth_failed.send(sender=cls, user=user)
             return False
-        # cache.add is the portable compare-and-set: exactly one fresh consumer wins.
-        first_use = cache.add(f"{USED_PREFIX}{token}", True, timeout=ttl * 2)
+        # Remove the positive proof of freshness on every successful use.
+        # Missing state is never recreated, so eviction cannot restore it.
+        first_use = atomic.atomic_pop(f"{FRESH_PREFIX}{token}", True, token=f"window:{token}", timeout=ttl * 2)
         if fresh and not first_use:
             signals.reauth_failed.send(sender=cls, user=user)
             return False

@@ -67,6 +67,10 @@ lint = [
     "pre-commit>=3.7.0",
     "ruff>=0.5.0",
 ]
+integration = [
+    "psycopg[binary]>=3.2",
+    "redis>=5",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["scoped_access"]

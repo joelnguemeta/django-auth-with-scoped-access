@@ -60,3 +60,40 @@ jobs:
         run: DJANGO_SETTINGS_MODULE=tests.settings uv run --no-sync python -m django check
       - name: Conformance + unit tests
         run: uv run --no-sync pytest -q
+
+  integration:
+    name: PostgreSQL and Redis integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_SETTINGS_MODULE: tests.integration.settings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - name: Install integration dependencies
+        run: uv sync --group dev --group integration
+      - name: Run real-service tests
+        run: uv run --no-sync pytest tests/integration -q

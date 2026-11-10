@@ -170,6 +170,8 @@ Optional module. When enabled:
 
 A protected action MAY require a **fresh** proof (intended for irreversible actions). A fresh consumption verifies only a token **never consumed before**, and marks it consumed. In `window` mode the token then keeps verifying for non-fresh actions until expiry. In `single_use` mode every consumption is fresh. Electing the single fresh consumer MUST be atomic under concurrency.
 
+If the implementation can no longer establish whether a token has been consumed, including after partial loss of its stored state, it MUST reject fresh consumption. Lost state MUST NOT make a previously consumed token fresh again.
+
 In both modes, a failed consumption by the wrong principal MUST NOT consume the token.
 
 ---
@@ -317,9 +319,12 @@ Cases exercising §7 carry a top-level `"reauth": {"ttl": <seconds>, "mode": "si
 {"op": "consume", "principal": "alice", "token": "$t1", "expect": true}
 {"op": "advance", "seconds": 301}
 {"op": "invalidate_all", "principal": "alice"}
+{"op": "lose_freshness_state", "principal": "alice", "token": "$t1"}
 ```
 
 `issue.expect` states whether a token is obtained; `$name` references a saved token; `consume` of an unknown/expired/foreign token MUST be false, as MUST a `consume` of an already-used token in `single_use` mode; a failed consume by the wrong principal MUST NOT burn the token. A `consume` step MAY carry `"fresh": true` to require a fresh proof (§7.7). An `issue` step MAY carry a `"verifier"` key; an unknown verifier name MUST yield `expect: false` (§7.1).
+
+`lose_freshness_state` simulates loss of the stored information needed to establish whether the referenced token has been consumed. The adapter removes that information; if it is inseparable from the token, it removes the token itself. It MUST NOT simulate a new proof or issuance.
 
 ### 12.2 Conformance claim
 

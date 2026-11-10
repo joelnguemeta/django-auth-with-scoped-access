@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Fail closed when a window-mode token's freshness state is lost. Existing window tokens issued before this change require a new proof for fresh-only actions.
+
 ## [0.5.0] - 2026-10-19
 
 Aligns the version number and this changelog with what is on PyPI. The `0.4.0` package published on 2026-10-19 was built from `main` after the merge below and already contains this ReAuth window mode, although its version string predates it; prefer `0.5.0`.
